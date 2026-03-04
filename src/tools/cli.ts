@@ -1,14 +1,6 @@
 import { spawn } from "child_process";
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
-
-const cliSchema = Type.Object({
-	command: Type.String({ description: "Shell command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 120)" })),
-});
-
-const DEFAULT_TIMEOUT = 120;
-const MAX_OUTPUT = 100_000; // ~100KB max output to send to LLM
+import { cliSchema, MAX_OUTPUT, DEFAULT_TIMEOUT } from "./shared.js";
 
 export function createCliTool(cwd: string, defaultTimeout?: number): AgentTool<typeof cliSchema> {
 	const baseTimeout = defaultTimeout ?? DEFAULT_TIMEOUT;

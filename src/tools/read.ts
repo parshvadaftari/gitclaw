@@ -1,16 +1,7 @@
 import { readFile } from "fs/promises";
 import { resolve } from "path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
-
-const readSchema = Type.Object({
-	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
-	offset: Type.Optional(Type.Number({ description: "Line number to start from (1-indexed)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
-});
-
-const MAX_LINES = 2000;
-const MAX_BYTES = 100_000;
+import { readSchema, MAX_LINES, paginateLines } from "./shared.js";
 
 function resolvePath(path: string, cwd: string): string {
 	return path.startsWith("/") ? path : resolve(cwd, path);
@@ -49,34 +40,12 @@ export function createReadTool(cwd: string): AgentTool<typeof readSchema> {
 			}
 
 			const text = buffer.toString("utf-8");
-			const allLines = text.split("\n");
-			const totalLines = allLines.length;
+			const page = paginateLines(text, offset, limit);
+			let result = page.text;
 
-			// Apply offset (1-indexed)
-			const startLine = offset ? Math.max(0, offset - 1) : 0;
-			if (startLine >= totalLines) {
-				throw new Error(`Offset ${offset} is beyond end of file (${totalLines} lines)`);
-			}
-
-			// Apply limit
-			const maxLines = limit ?? MAX_LINES;
-			const endLine = Math.min(startLine + maxLines, totalLines);
-			let selected = allLines.slice(startLine, endLine).join("\n");
-
-			// Byte limit
-			let truncatedByBytes = false;
-			if (Buffer.byteLength(selected, "utf-8") > MAX_BYTES) {
-				selected = selected.slice(0, MAX_BYTES);
-				truncatedByBytes = true;
-			}
-
-			let result = selected;
-			const shownLines = endLine - startLine;
-			const hasMore = endLine < totalLines || truncatedByBytes;
-
-			if (hasMore) {
-				const nextOffset = endLine + 1;
-				result += `\n\n[Showing lines ${startLine + 1}-${endLine} of ${totalLines}. Use offset=${nextOffset} to continue.]`;
+			if (page.hasMore) {
+				const nextOffset = page.shownRange[1] + 1;
+				result += `\n\n[Showing lines ${page.shownRange[0]}-${page.shownRange[1]} of ${page.totalLines}. Use offset=${nextOffset} to continue.]`;
 			}
 
 			return {

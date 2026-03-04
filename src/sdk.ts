@@ -3,10 +3,9 @@ import type { AgentEvent, AgentTool } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { loadAgent } from "./loader.js";
 import type { AgentManifest } from "./loader.js";
-import { createCliTool } from "./tools/cli.js";
-import { createReadTool } from "./tools/read.js";
-import { createWriteTool } from "./tools/write.js";
-import { createMemoryTool } from "./tools/memory.js";
+import { createBuiltinTools } from "./tools/index.js";
+import { createSandboxContext } from "./sandbox.js";
+import type { SandboxContext } from "./sandbox.js";
 import { loadHooksConfig, runHooks, wrapToolWithHooks } from "./hooks.js";
 import { loadDeclarativeTools } from "./tool-loader.js";
 import { buildTypeboxSchema } from "./tool-loader.js";
@@ -18,6 +17,7 @@ import type {
 	GCHookContext,
 	Query,
 	QueryOptions,
+	SandboxOptions,
 } from "./sdk-types.js";
 
 // ── Event channel ──────────────────────────────────────────────────────
@@ -118,6 +118,9 @@ export function query(options: QueryOptions): Query {
 		channel.push(msg);
 	}
 
+	// Sandbox context (hoisted for cleanup in catch)
+	let sandboxCtx: SandboxContext | undefined;
+
 	// Async initialization + run
 	const runPromise = (async () => {
 		const dir = options.dir ?? process.cwd();
@@ -136,16 +139,23 @@ export function query(options: QueryOptions): Query {
 			systemPrompt += "\n\n" + options.systemPromptSuffix;
 		}
 
-		// 3. Build tools
+		// 3. Build tools (with optional sandbox)
+		if (options.sandbox) {
+			const sandboxConfig: SandboxOptions = options.sandbox === true
+				? { provider: "e2b" }
+				: options.sandbox;
+			sandboxCtx = await createSandboxContext(sandboxConfig, dir);
+			await sandboxCtx.gitMachine.start();
+		}
+
 		let tools: AgentTool<any>[] = [];
 
 		if (!options.replaceBuiltinTools) {
-			tools = [
-				createCliTool(dir, loaded.manifest.runtime.timeout),
-				createReadTool(dir),
-				createWriteTool(dir),
-				createMemoryTool(dir),
-			];
+			tools = createBuiltinTools({
+				dir,
+				timeout: loaded.manifest.runtime.timeout,
+				sandbox: sandboxCtx,
+			});
 		}
 
 		// Declarative tools from tools/*.yaml
@@ -387,9 +397,19 @@ export function query(options: QueryOptions): Query {
 			}
 		}
 
+		// Stop sandbox if active
+		if (sandboxCtx) {
+			await sandboxCtx.gitMachine.stop().catch(() => {});
+		}
+
 		// Ensure channel finishes even if no agent_end event
 		channel.finish();
-	})().catch((err) => {
+	})().catch(async (err) => {
+		// Stop sandbox on error
+		if (sandboxCtx) {
+			await sandboxCtx.gitMachine.stop().catch(() => {});
+		}
+
 		// Fire on_error hooks
 		if (options.hooks?.onError) {
 			Promise.resolve(options.hooks.onError({

@@ -5,6 +5,7 @@ export { query, tool } from "./sdk.js";
 export type {
 	Query,
 	QueryOptions,
+	SandboxOptions,
 	GCMessage,
 	GCAssistantMessage,
 	GCUserMessage,
@@ -26,6 +27,10 @@ export type { WorkflowMetadata } from "./workflows.js";
 export type { SubAgentMetadata } from "./agents.js";
 export type { ComplianceWarning } from "./compliance.js";
 export type { EnvConfig } from "./config.js";
+
+// Sandbox
+export type { SandboxConfig, SandboxContext } from "./sandbox.js";
+export { createSandboxContext } from "./sandbox.js";
 
 // Loader (escape hatch)
 export { loadAgent } from "./loader.js";

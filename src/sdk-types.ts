@@ -100,6 +100,19 @@ export interface GCToolDefinition {
 	handler: (args: any, signal?: AbortSignal) => Promise<string | { text: string; details?: any }>;
 }
 
+// ── Sandbox options ─────────────────────────────────────────────────────
+
+export interface SandboxOptions {
+	provider: "e2b";
+	template?: string;
+	timeout?: number;
+	repository?: string;
+	token?: string;
+	session?: string;
+	autoCommit?: boolean;
+	envs?: Record<string, string>;
+}
+
 // ── Query options ──────────────────────────────────────────────────────
 
 export interface QueryOptions {
@@ -113,6 +126,7 @@ export interface QueryOptions {
 	replaceBuiltinTools?: boolean;
 	allowedTools?: string[];
 	disallowedTools?: string[];
+	sandbox?: SandboxOptions | boolean;
 	hooks?: GCHooks;
 	maxTurns?: number;
 	abortController?: AbortController;

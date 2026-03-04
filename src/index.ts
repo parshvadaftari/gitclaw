@@ -4,10 +4,9 @@ import { createInterface } from "readline";
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentEvent, AgentTool } from "@mariozechner/pi-agent-core";
 import { loadAgent } from "./loader.js";
-import { createCliTool } from "./tools/cli.js";
-import { createReadTool } from "./tools/read.js";
-import { createWriteTool } from "./tools/write.js";
-import { createMemoryTool } from "./tools/memory.js";
+import { createBuiltinTools } from "./tools/index.js";
+import { createSandboxContext } from "./sandbox.js";
+import type { SandboxContext, SandboxConfig } from "./sandbox.js";
 import { expandSkillCommand } from "./skills.js";
 import { loadHooksConfig, runHooks, wrapToolWithHooks } from "./hooks.js";
 import type { HooksConfig } from "./hooks.js";
@@ -24,12 +23,13 @@ const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const red = (s: string) => `\x1b[31m${s}\x1b[0m`;
 const green = (s: string) => `\x1b[32m${s}\x1b[0m`;
 
-function parseArgs(argv: string[]): { model?: string; dir: string; prompt?: string; env?: string } {
+function parseArgs(argv: string[]): { model?: string; dir: string; prompt?: string; env?: string; sandbox?: boolean } {
 	const args = argv.slice(2);
 	let model: string | undefined;
 	let dir = process.cwd();
 	let prompt: string | undefined;
 	let env: string | undefined;
+	let sandbox = false;
 
 	for (let i = 0; i < args.length; i++) {
 		switch (args[i]) {
@@ -49,6 +49,10 @@ function parseArgs(argv: string[]): { model?: string; dir: string; prompt?: stri
 			case "-e":
 				env = args[++i];
 				break;
+			case "--sandbox":
+			case "-s":
+				sandbox = true;
+				break;
 			default:
 				if (!args[i].startsWith("-")) {
 					prompt = args[i];
@@ -57,7 +61,7 @@ function parseArgs(argv: string[]): { model?: string; dir: string; prompt?: stri
 		}
 	}
 
-	return { model, dir, prompt, env };
+	return { model, dir, prompt, env, sandbox };
 }
 
 function handleEvent(
@@ -235,7 +239,7 @@ async function ensureRepo(dir: string, model?: string): Promise<string> {
 }
 
 async function main(): Promise<void> {
-	const { model, dir: rawDir, prompt, env } = parseArgs(process.argv);
+	const { model, dir: rawDir, prompt, env, sandbox: useSandbox } = parseArgs(process.argv);
 
 	// If no --dir given interactively, ask for it
 	let dir = rawDir;
@@ -246,8 +250,22 @@ async function main(): Promise<void> {
 		}
 	}
 
-	// Ensure the target is a valid gitclaw repo
-	dir = await ensureRepo(dir, model);
+	// Create sandbox context if --sandbox flag is set
+	let sandboxCtx: SandboxContext | undefined;
+	if (useSandbox) {
+		const sandboxConfig: SandboxConfig = { provider: "e2b" };
+		sandboxCtx = await createSandboxContext(sandboxConfig, resolve(dir));
+		console.log(dim("Starting sandbox VM..."));
+		await sandboxCtx.gitMachine.start();
+		console.log(dim(`Sandbox ready (repo: ${sandboxCtx.repoPath})`));
+	}
+
+	// Ensure the target is a valid gitclaw repo (skip in sandbox mode — gitmachine clones the repo)
+	if (!useSandbox) {
+		dir = await ensureRepo(dir, model);
+	} else {
+		dir = resolve(dir);
+	}
 
 	let loaded;
 	try {
@@ -312,12 +330,11 @@ async function main(): Promise<void> {
 	}
 
 	// Build tools — built-in + declarative
-	let tools: AgentTool<any>[] = [
-		createCliTool(dir, manifest.runtime.timeout),
-		createReadTool(dir),
-		createWriteTool(dir),
-		createMemoryTool(dir),
-	];
+	let tools: AgentTool<any>[] = createBuiltinTools({
+		dir,
+		timeout: manifest.runtime.timeout,
+		sandbox: sandboxCtx,
+	});
 
 	// Load declarative tools from tools/*.yaml (Phase 2.2)
 	const declarativeTools = await loadDeclarativeTools(agentDir);
@@ -380,6 +397,11 @@ async function main(): Promise<void> {
 				}).catch(() => {});
 			}
 			throw err;
+		} finally {
+			if (sandboxCtx) {
+				console.log(dim("Stopping sandbox..."));
+				await sandboxCtx.gitMachine.stop();
+			}
 		}
 		return;
 	}
@@ -401,6 +423,7 @@ async function main(): Promise<void> {
 
 			if (trimmed === "/quit" || trimmed === "/exit") {
 				rl.close();
+				await stopSandbox();
 				process.exit(0);
 			}
 
@@ -463,6 +486,14 @@ async function main(): Promise<void> {
 		});
 	};
 
+	// Sandbox cleanup helper
+	const stopSandbox = async () => {
+		if (sandboxCtx) {
+			console.log(dim("Stopping sandbox..."));
+			await sandboxCtx.gitMachine.stop();
+		}
+	};
+
 	// Handle Ctrl+C during streaming
 	rl.on("SIGINT", () => {
 		if (agent.state.isStreaming) {
@@ -470,7 +501,7 @@ async function main(): Promise<void> {
 		} else {
 			console.log("\nBye!");
 			rl.close();
-			process.exit(0);
+			stopSandbox().finally(() => process.exit(0));
 		}
 	});
 

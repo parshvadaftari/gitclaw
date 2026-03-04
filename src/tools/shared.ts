@@ -1,0 +1,88 @@
+import { Type } from "@sinclair/typebox";
+import { StringEnum } from "@mariozechner/pi-ai";
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+export const MAX_OUTPUT = 100_000; // ~100KB max output to send to LLM
+export const MAX_LINES = 2000;
+export const MAX_BYTES = 100_000;
+export const DEFAULT_TIMEOUT = 120;
+export const DEFAULT_MEMORY_PATH = "memory/MEMORY.md";
+
+// ── Schemas ─────────────────────────────────────────────────────────────
+
+export const cliSchema = Type.Object({
+	command: Type.String({ description: "Shell command to execute" }),
+	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 120)" })),
+});
+
+export const readSchema = Type.Object({
+	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
+	offset: Type.Optional(Type.Number({ description: "Line number to start from (1-indexed)" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+});
+
+export const writeSchema = Type.Object({
+	path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
+	content: Type.String({ description: "Content to write to the file" }),
+	createDirs: Type.Optional(Type.Boolean({ description: "Create parent directories if needed (default: true)" })),
+});
+
+export const memorySchema = Type.Object({
+	action: StringEnum(["load", "save"], { description: "Whether to load or save memory" }),
+	content: Type.Optional(Type.String({ description: "Memory content to save (required for save)" })),
+	message: Type.Optional(Type.String({ description: "Commit message describing why this memory changed (required for save)" })),
+});
+
+// ── Shared helpers ──────────────────────────────────────────────────────
+
+/** Truncate output to MAX_OUTPUT, keeping the tail. */
+export function truncateOutput(text: string): string {
+	if (text.length > MAX_OUTPUT) {
+		return `[output truncated, showing last ~100KB]\n${text.slice(-MAX_OUTPUT)}`;
+	}
+	return text;
+}
+
+/**
+ * Paginate text by lines with offset (1-indexed) and limit.
+ * Returns { text, hasMore, shownRange, totalLines }.
+ */
+export function paginateLines(
+	text: string,
+	offset?: number,
+	limit?: number,
+): { text: string; hasMore: boolean; shownRange: [number, number]; totalLines: number } {
+	const allLines = text.split("\n");
+	const totalLines = allLines.length;
+
+	const startLine = offset ? Math.max(0, offset - 1) : 0;
+	if (startLine >= totalLines) {
+		throw new Error(`Offset ${offset} is beyond end of file (${totalLines} lines)`);
+	}
+
+	const maxLines = limit ?? MAX_LINES;
+	const endLine = Math.min(startLine + maxLines, totalLines);
+	let selected = allLines.slice(startLine, endLine).join("\n");
+
+	let truncatedByBytes = false;
+	if (Buffer.byteLength(selected, "utf-8") > MAX_BYTES) {
+		selected = selected.slice(0, MAX_BYTES);
+		truncatedByBytes = true;
+	}
+
+	const hasMore = endLine < totalLines || truncatedByBytes;
+
+	return {
+		text: selected,
+		hasMore,
+		shownRange: [startLine + 1, endLine],
+		totalLines,
+	};
+}
+
+/** Resolve a path relative to a sandbox repo root. */
+export function resolveSandboxPath(path: string, repoRoot: string): string {
+	if (path.startsWith("/")) return path;
+	return repoRoot.endsWith("/") ? repoRoot + path : repoRoot + "/" + path;
+}

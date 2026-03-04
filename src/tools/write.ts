@@ -1,13 +1,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import { dirname, resolve } from "path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
-
-const writeSchema = Type.Object({
-	path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
-	content: Type.String({ description: "Content to write to the file" }),
-	createDirs: Type.Optional(Type.Boolean({ description: "Create parent directories if needed (default: true)" })),
-});
+import { writeSchema } from "./shared.js";
 
 function resolvePath(path: string, cwd: string): string {
 	return path.startsWith("/") ? path : resolve(cwd, path);
