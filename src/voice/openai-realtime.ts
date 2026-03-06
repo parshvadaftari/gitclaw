@@ -58,9 +58,10 @@ export class OpenAIRealtimeAdapter implements VoiceAdapter {
 		if (!this.ws) return;
 
 		const instructions = this.config.instructions ||
-			"You are a voice assistant for a git-based AI agent called gitclaw. " +
-			"When the user asks you to do something with code, files, or their project, " +
-			"use the run_agent tool to execute the request. Speak concisely.";
+			"You are a voice interface for GitClaw, a powerful AI agent with access to the terminal, file system, and git. " +
+			"You MUST use the run_agent tool for ANY request that involves doing something — running commands, opening apps, reading files, writing code, searching, browsing, installing packages, git operations, or anything actionable. " +
+			"Only respond directly for simple greetings, clarifying questions, or when the user explicitly asks YOU a question. " +
+			"When in doubt, use run_agent. Speak concisely — summarize the tool result in 1-2 sentences.";
 
 		this.send({
 			type: "session.update",
@@ -73,7 +74,7 @@ export class OpenAIRealtimeAdapter implements VoiceAdapter {
 					{
 						type: "function",
 						name: "run_agent",
-						description: "Run a gitclaw agent query to perform tasks like reading files, writing code, running commands, etc.",
+						description: "Execute any request through the gitclaw agent. It has full access to the terminal (can run any shell command, open apps, install packages), file system (read/write/create files), git operations, and persistent memory. Use this for ALL actionable requests.",
 						parameters: {
 							type: "object",
 							properties: {
