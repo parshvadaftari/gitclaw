@@ -17,7 +17,7 @@
   /* Header */
   .header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px; border-bottom: 1px solid #1a1a1a;
+    padding: 12px 24px; border-bottom: 1px solid #1a1a1a;
   }
   .header-left { display: flex; align-items: center; gap: 12px; }
   .header-left h1 { font-size: 18px; font-weight: 600; }
@@ -26,6 +26,7 @@
     font-size: 10px; color: #555; background: #111; border: 1px solid #222;
     border-radius: 4px; padding: 2px 8px;
   }
+  .header-right { display: flex; align-items: center; gap: 16px; }
   .status-dot {
     width: 8px; height: 8px; border-radius: 50%;
     background: #333; display: inline-block;
@@ -34,38 +35,40 @@
   .status-dot.error { background: #ef4444; }
   .status-text { font-size: 11px; color: #555; margin-left: 8px; }
 
-  /* Main area */
-  .main {
-    display: flex; flex: 1; overflow: hidden;
+  /* View tabs */
+  .view-tabs { display: flex; gap: 4px; }
+  .view-tab {
+    font-family: inherit; font-size: 11px; padding: 4px 12px;
+    background: transparent; border: 1px solid #222; border-radius: 4px;
+    color: #555; cursor: pointer; transition: all 0.2s;
   }
+  .view-tab:hover { border-color: #333; color: #888; }
+  .view-tab.active { border-color: #22c55e; color: #22c55e; background: #22c55e10; }
 
-  /* Left panel: camera + controls */
+  /* Main area */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ─── Chat View ─── */
+  .chat-view { display: flex; flex: 1; overflow: hidden; }
+  .chat-view.hidden { display: none; }
+
   .panel-left {
     width: 340px; min-width: 340px;
     border-right: 1px solid #1a1a1a;
     display: flex; flex-direction: column;
-    padding: 20px;
-    gap: 16px;
+    padding: 20px; gap: 16px;
   }
-
   .camera-container {
     position: relative; background: #111; border: 1px solid #1a1a1a;
     border-radius: 8px; overflow: hidden; aspect-ratio: 4/3;
   }
-  .camera-container video {
-    width: 100%; height: 100%; object-fit: cover;
-    display: block;
-  }
+  .camera-container video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .camera-container .camera-off {
     position: absolute; inset: 0; display: flex;
-    align-items: center; justify-content: center;
-    color: #333; font-size: 12px;
+    align-items: center; justify-content: center; color: #333; font-size: 12px;
   }
   .camera-container canvas { display: none; }
-
-  .controls {
-    display: flex; gap: 12px;
-  }
+  .controls { display: flex; gap: 12px; }
   .ctrl-btn {
     flex: 1; padding: 12px; border-radius: 8px;
     background: #111; border: 1px solid #222;
@@ -75,43 +78,28 @@
   }
   .ctrl-btn:hover { border-color: #333; color: #aaa; }
   .ctrl-btn.active { border-color: #22c55e; color: #22c55e; background: #22c55e10; }
-  .ctrl-btn.active:hover { border-color: #22c55e; }
   .ctrl-btn svg { width: 16px; height: 16px; }
 
-  /* Right panel: conversation + input */
-  .panel-right {
-    flex: 1; display: flex; flex-direction: column;
-    min-width: 0;
-  }
-
+  .panel-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .conversation {
     flex: 1; overflow-y: auto; padding: 20px;
     font-size: 12px; line-height: 1.8;
   }
-  .conversation:empty::before {
-    content: "Conversation will appear here...";
-    color: #333;
-  }
+  .conversation:empty::before { content: "Conversation will appear here..."; color: #333; }
   .conv-msg { margin-bottom: 4px; }
   .conv-msg.user { color: #999; }
   .conv-msg.user .label { color: #22c55e; font-weight: 600; }
   .conv-msg.assistant { color: #e4e4e4; }
   .conv-msg.assistant .label { color: #22c55e; font-weight: 600; }
   .conv-msg.tool { color: #f97316; }
-  .conv-msg.tool::before { content: ""; }
   .conv-msg.system { color: #555; font-style: italic; }
-  .conv-msg.frame { color: #444; font-size: 11px; }
 
-  /* Text input */
   .input-bar {
-    display: flex; padding: 16px 20px;
-    border-top: 1px solid #1a1a1a; gap: 8px;
+    display: flex; padding: 12px 20px; border-top: 1px solid #1a1a1a; gap: 8px;
   }
   .input-bar input {
-    flex: 1; background: #111; border: 1px solid #222;
-    border-radius: 6px; padding: 10px 14px;
-    color: #e4e4e4; font-family: inherit; font-size: 13px;
-    outline: none;
+    flex: 1; background: #111; border: 1px solid #222; border-radius: 6px;
+    padding: 10px 14px; color: #e4e4e4; font-family: inherit; font-size: 13px; outline: none;
   }
   .input-bar input:focus { border-color: #333; }
   .input-bar input::placeholder { color: #444; }
@@ -122,16 +110,84 @@
   }
   .input-bar button:hover { background: #16a34a; }
 
+  /* ─── Files View ─── */
+  .files-view { display: flex; flex: 1; overflow: hidden; }
+  .files-view.hidden { display: none; }
+
+  .file-sidebar {
+    width: 280px; min-width: 280px; border-right: 1px solid #1a1a1a;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .file-sidebar-header {
+    padding: 12px 16px; border-bottom: 1px solid #1a1a1a;
+    font-size: 11px; color: #555; font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .file-sidebar-header button {
+    background: none; border: none; color: #555; cursor: pointer;
+    font-family: inherit; font-size: 11px; padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .file-sidebar-header button:hover { color: #22c55e; background: #22c55e10; }
+  .file-tree { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .file-tree-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 16px; font-size: 12px; cursor: pointer;
+    color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .file-tree-item:hover { background: #111; color: #ccc; }
+  .file-tree-item.active { background: #22c55e10; color: #22c55e; }
+  .file-tree-item.dir { color: #aaa; }
+  .file-tree-item .icon { width: 14px; text-align: center; flex-shrink: 0; font-size: 10px; }
+  .file-tree-item .indent { display: inline-block; }
+  .file-tree-group { }
+  .file-tree-group.collapsed > .file-tree-children { display: none; }
+
+  .file-editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .file-editor-header {
+    padding: 10px 20px; border-bottom: 1px solid #1a1a1a;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; min-height: 42px;
+  }
+  .file-editor-header .filepath { color: #888; }
+  .file-editor-header .filepath span { color: #22c55e; }
+  .file-editor-header .actions { display: flex; gap: 8px; }
+  .file-editor-header .actions button {
+    background: #111; border: 1px solid #222; border-radius: 4px;
+    color: #888; font-family: inherit; font-size: 11px;
+    padding: 4px 12px; cursor: pointer;
+  }
+  .file-editor-header .actions button:hover { border-color: #333; color: #ccc; }
+  .file-editor-header .actions button.save-btn { border-color: #22c55e40; color: #22c55e; }
+  .file-editor-header .actions button.save-btn:hover { background: #22c55e10; }
+  .file-editor-header .actions .saved-msg { font-size: 11px; color: #22c55e; }
+
+  .file-editor-empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: #333; font-size: 13px;
+  }
+  .file-editor-wrap {
+    flex: 1; overflow: auto; display: none;
+  }
+  .file-editor-wrap.visible { display: block; }
+  .file-editor-wrap textarea {
+    width: 100%; min-height: 100%; background: transparent; border: none;
+    color: #e4e4e4; font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+    line-height: 1.6; padding: 16px 20px; resize: none; outline: none;
+    tab-size: 4; white-space: pre;
+  }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #222; border-radius: 3px; }
 
-  /* Responsive */
   @media (max-width: 700px) {
-    .main { flex-direction: column; }
+    .chat-view { flex-direction: column; }
     .panel-left { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid #1a1a1a; }
     .camera-container { aspect-ratio: 16/9; }
+    .files-view { flex-direction: column; }
+    .file-sidebar { width: 100%; min-width: 0; max-height: 40vh; border-right: none; border-bottom: 1px solid #1a1a1a; }
   }
 </style>
 </head>
@@ -141,50 +197,238 @@
   <div class="header-left">
     <h1>Git<span>Claw</span></h1>
     <span class="badge">multimodal</span>
+    <div class="view-tabs">
+      <button class="view-tab active" id="tabChat" onclick="switchView('chat')">Chat</button>
+      <button class="view-tab" id="tabFiles" onclick="switchView('files')">Files</button>
+    </div>
   </div>
-  <div style="display:flex;align-items:center;">
+  <div class="header-right">
     <span class="status-dot" id="statusDot"></span>
     <span class="status-text" id="statusText">Disconnected</span>
   </div>
 </div>
 
 <div class="main">
-  <div class="panel-left">
-    <div class="camera-container" id="cameraBox">
-      <div class="camera-off" id="cameraOff">Camera off</div>
-      <video id="cameraVideo" autoplay playsinline muted style="display:none;"></video>
-      <canvas id="cameraCanvas"></canvas>
+  <!-- Chat View -->
+  <div class="chat-view" id="chatView">
+    <div class="panel-left">
+      <div class="camera-container" id="cameraBox">
+        <div class="camera-off" id="cameraOff">Camera off</div>
+        <video id="cameraVideo" autoplay playsinline muted style="display:none;"></video>
+        <canvas id="cameraCanvas"></canvas>
+      </div>
+      <div class="controls">
+        <button class="ctrl-btn" id="cameraBtn" onclick="toggleCamera()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11"/>
+            <rect x="2" y="6" width="14" height="12" rx="2"/>
+          </svg>
+          Camera
+        </button>
+        <button class="ctrl-btn" id="micBtn" onclick="toggleMic()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" x2="12" y1="19" y2="22"/>
+          </svg>
+          Mic
+        </button>
+      </div>
     </div>
-    <div class="controls">
-      <button class="ctrl-btn" id="cameraBtn" onclick="toggleCamera()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11"/>
-          <rect x="2" y="6" width="14" height="12" rx="2"/>
-        </svg>
-        Camera
-      </button>
-      <button class="ctrl-btn" id="micBtn" onclick="toggleMic()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" x2="12" y1="19" y2="22"/>
-        </svg>
-        Mic
-      </button>
+    <div class="panel-right">
+      <div class="conversation" id="conversation"></div>
+      <div class="input-bar">
+        <input type="text" id="textInput" placeholder="Type a message..." autocomplete="off" />
+        <button onclick="sendText()">Send</button>
+      </div>
     </div>
   </div>
 
-  <div class="panel-right">
-    <div class="conversation" id="conversation"></div>
-    <div class="input-bar">
-      <input type="text" id="textInput" placeholder="Type a message..." autocomplete="off" />
-      <button onclick="sendText()">Send</button>
+  <!-- Files View -->
+  <div class="files-view hidden" id="filesView">
+    <div class="file-sidebar">
+      <div class="file-sidebar-header">
+        <span>EXPLORER</span>
+        <button onclick="loadFileTree()">Refresh</button>
+      </div>
+      <div class="file-tree" id="fileTree">
+        <div style="padding:16px;color:#333;font-size:12px;">Loading...</div>
+      </div>
+    </div>
+    <div class="file-editor-pane">
+      <div class="file-editor-header">
+        <div class="filepath" id="editorFilepath">No file selected</div>
+        <div class="actions" id="editorActions" style="display:none;">
+          <span class="saved-msg" id="savedMsg" style="display:none;">Saved</span>
+          <button class="save-btn" onclick="saveFile()">Save</button>
+        </div>
+      </div>
+      <div class="file-editor-empty" id="editorEmpty">Select a file to view</div>
+      <div class="file-editor-wrap" id="editorWrap">
+        <textarea id="editorTextarea" spellcheck="false"></textarea>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-// ─── State ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+//  VIEW SWITCHING
+// ═══════════════════════════════════════════════════════
+let currentView = 'chat';
+let filesLoaded = false;
+
+function switchView(view) {
+  currentView = view;
+  document.getElementById('chatView').classList.toggle('hidden', view !== 'chat');
+  document.getElementById('filesView').classList.toggle('hidden', view !== 'files');
+  document.getElementById('tabChat').classList.toggle('active', view === 'chat');
+  document.getElementById('tabFiles').classList.toggle('active', view === 'files');
+
+  if (view === 'files' && !filesLoaded) {
+    loadFileTree();
+    filesLoaded = true;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  FILE BROWSER / EDITOR
+// ═══════════════════════════════════════════════════════
+let openFilePath = null;
+
+async function loadFileTree() {
+  const treeEl = document.getElementById('fileTree');
+  treeEl.innerHTML = '<div style="padding:16px;color:#333;font-size:12px;">Loading...</div>';
+  try {
+    const res = await fetch('/api/files?path=.');
+    const data = await res.json();
+    treeEl.innerHTML = '';
+    renderTree(data.entries, treeEl, 0);
+  } catch (err) {
+    treeEl.innerHTML = '<div style="padding:16px;color:#ef4444;font-size:12px;">Failed to load files</div>';
+  }
+}
+
+function renderTree(entries, parent, depth) {
+  for (const entry of entries) {
+    if (entry.type === 'directory') {
+      const group = document.createElement('div');
+      group.className = 'file-tree-group';
+
+      const item = document.createElement('div');
+      item.className = 'file-tree-item dir';
+      item.innerHTML =
+        '<span class="indent" style="width:' + (depth * 16) + 'px"></span>' +
+        '<span class="icon">&#9660;</span>' +
+        escHtml(entry.name);
+      item.onclick = (e) => {
+        e.stopPropagation();
+        group.classList.toggle('collapsed');
+        const icon = item.querySelector('.icon');
+        icon.innerHTML = group.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+      };
+
+      const children = document.createElement('div');
+      children.className = 'file-tree-children';
+      if (entry.children && entry.children.length > 0) {
+        renderTree(entry.children, children, depth + 1);
+      }
+
+      group.appendChild(item);
+      group.appendChild(children);
+      parent.appendChild(group);
+    } else {
+      const item = document.createElement('div');
+      item.className = 'file-tree-item';
+      if (openFilePath === entry.path) item.classList.add('active');
+      item.innerHTML =
+        '<span class="indent" style="width:' + (depth * 16) + 'px"></span>' +
+        '<span class="icon" style="color:#555;">&#9679;</span>' +
+        escHtml(entry.name);
+      item.onclick = () => openFile(entry.path);
+      parent.appendChild(item);
+    }
+  }
+}
+
+async function openFile(filePath) {
+  openFilePath = filePath;
+
+  // Update active state in tree
+  document.querySelectorAll('.file-tree-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.file-tree-item').forEach(el => {
+    if (el.textContent.trim() === filePath.split('/').pop()) el.classList.add('active');
+  });
+
+  const filepathEl = document.getElementById('editorFilepath');
+  const parts = filePath.split('/');
+  const fileName = parts.pop();
+  const dir = parts.length > 0 ? parts.join('/') + '/' : '';
+  filepathEl.innerHTML = '<span>' + escHtml(dir) + '</span>' + escHtml(fileName);
+
+  document.getElementById('editorEmpty').style.display = 'none';
+  document.getElementById('editorWrap').classList.add('visible');
+  document.getElementById('editorActions').style.display = 'flex';
+  document.getElementById('savedMsg').style.display = 'none';
+
+  const textarea = document.getElementById('editorTextarea');
+  textarea.value = 'Loading...';
+  textarea.readOnly = true;
+
+  try {
+    const res = await fetch('/api/file?path=' + encodeURIComponent(filePath));
+    const data = await res.json();
+    if (data.error) {
+      textarea.value = 'Error: ' + data.error;
+    } else {
+      textarea.value = data.content;
+      textarea.readOnly = false;
+    }
+  } catch (err) {
+    textarea.value = 'Failed to load file';
+  }
+}
+
+async function saveFile() {
+  if (!openFilePath) return;
+  const textarea = document.getElementById('editorTextarea');
+  const savedMsg = document.getElementById('savedMsg');
+
+  try {
+    const res = await fetch('/api/file', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: openFilePath, content: textarea.value }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      savedMsg.style.display = 'inline';
+      savedMsg.textContent = 'Saved';
+      savedMsg.style.color = '#22c55e';
+      setTimeout(() => { savedMsg.style.display = 'none'; }, 2000);
+    } else {
+      savedMsg.style.display = 'inline';
+      savedMsg.textContent = 'Error: ' + (data.error || 'unknown');
+      savedMsg.style.color = '#ef4444';
+    }
+  } catch {
+    savedMsg.style.display = 'inline';
+    savedMsg.textContent = 'Save failed';
+    savedMsg.style.color = '#ef4444';
+  }
+}
+
+// Ctrl+S / Cmd+S to save
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's' && currentView === 'files' && openFilePath) {
+    e.preventDefault();
+    saveFile();
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+//  CHAT / VOICE (same as before)
+// ═══════════════════════════════════════════════════════
 let ws = null;
 let audioCtx = null;
 let micStream = null;
@@ -204,13 +448,11 @@ const cameraCanvas = document.getElementById('cameraCanvas');
 const conv = document.getElementById('conversation');
 const textInput = document.getElementById('textInput');
 
-// ─── Status ───────────────────────────────────────────
 function setStatus(text, state) {
   statusText.textContent = text;
   statusDot.className = 'status-dot ' + (state || '');
 }
 
-// ─── Conversation log ─────────────────────────────────
 function appendConv(html, cls) {
   const div = document.createElement('div');
   div.className = 'conv-msg ' + (cls || '');
@@ -219,89 +461,54 @@ function appendConv(html, cls) {
   conv.scrollTop = conv.scrollHeight;
 }
 
-// ─── WebSocket ────────────────────────────────────────
 function connectWS() {
   if (ws) return;
   setStatus('Connecting...', '');
-
   ws = new WebSocket('ws://' + window.location.host);
-
-  ws.onopen = () => {
-    setStatus('Connected', 'connected');
-  };
-
-  ws.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      handleServerMessage(msg);
-    } catch {}
-  };
-
+  ws.onopen = () => setStatus('Connected', 'connected');
+  ws.onmessage = (e) => { try { handleServerMessage(JSON.parse(e.data)); } catch {} };
   ws.onerror = () => setStatus('Connection error', 'error');
-
-  ws.onclose = () => {
-    ws = null;
-    setStatus('Disconnected', '');
-    stopMic();
-    stopCamera();
-  };
+  ws.onclose = () => { ws = null; setStatus('Disconnected', ''); stopMic(); stopCamera(); };
 }
 
 function sendMsg(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-// ─── Handle server messages ───────────────────────────
 let assistantText = '';
-
 function handleServerMessage(msg) {
   switch (msg.type) {
-    case 'audio_delta':
-      playAudioDelta(msg.audio);
-      break;
-
+    case 'audio_delta': playAudioDelta(msg.audio); break;
     case 'transcript':
       if (msg.role === 'user' && !msg.partial) {
         appendConv('<span class="label">You: </span>' + escHtml(msg.text), 'user');
       } else if (msg.role === 'assistant') {
-        if (msg.partial) {
-          assistantText += msg.text;
-        } else {
-          // Final transcript
-          if (assistantText) {
-            appendConv('<span class="label">Assistant: </span>' + escHtml(assistantText), 'assistant');
-            assistantText = '';
-          } else {
-            appendConv('<span class="label">Assistant: </span>' + escHtml(msg.text), 'assistant');
-          }
+        if (msg.partial) { assistantText += msg.text; }
+        else {
+          if (assistantText) { appendConv('<span class="label">Assistant: </span>' + escHtml(assistantText), 'assistant'); assistantText = ''; }
+          else { appendConv('<span class="label">Assistant: </span>' + escHtml(msg.text), 'assistant'); }
         }
       }
       break;
-
     case 'agent_working':
       appendConv('Running: ' + escHtml(msg.query), 'tool');
       setStatus('Agent working...', 'connected');
+      // Auto-refresh file tree if files view was loaded
+      if (filesLoaded) setTimeout(() => loadFileTree(), 2000);
       break;
-
     case 'agent_done':
       setStatus('Connected', 'connected');
+      if (filesLoaded) loadFileTree();
       break;
-
     case 'error':
       appendConv('Error: ' + escHtml(msg.message), 'system');
       break;
   }
 }
 
-function escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-// ─── Audio playback ───────────────────────────────────
+// Audio playback
 let audioQueue = [];
 let isPlaying = false;
 let currentSource = null;
@@ -309,14 +516,12 @@ let nextPlayTime = 0;
 
 function playAudioDelta(base64) {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const int16 = new Int16Array(bytes.buffer);
   const float32 = new Float32Array(int16.length);
   for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
-
   const buffer = audioCtx.createBuffer(1, float32.length, 24000);
   buffer.getChannelData(0).set(float32);
   audioQueue.push(buffer);
@@ -334,128 +539,74 @@ function playNext() {
   const startTime = Math.max(now, nextPlayTime);
   source.start(startTime);
   nextPlayTime = startTime + buffer.duration;
-  source.onended = () => {
-    if (audioQueue.length > 0) playNext();
-    else isPlaying = false;
-  };
+  source.onended = () => { if (audioQueue.length > 0) playNext(); else isPlaying = false; };
   currentSource = source;
 }
 
-// ─── Microphone ───────────────────────────────────────
-async function toggleMic() {
-  if (micActive) {
-    stopMic();
-  } else {
-    await startMic();
-  }
-}
-
+// Mic
+async function toggleMic() { if (micActive) stopMic(); else await startMic(); }
 async function startMic() {
   connectWS();
-
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    appendConv('Microphone access denied', 'system');
-    return;
-  }
-
+  try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { appendConv('Microphone access denied', 'system'); return; }
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
   const source = audioCtx.createMediaStreamSource(micStream);
   micProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
   source.connect(micProcessor);
   micProcessor.connect(audioCtx.destination);
-
   micProcessor.onaudioprocess = (e) => {
     if (!micActive || !ws || ws.readyState !== WebSocket.OPEN) return;
     const input = e.inputBuffer.getChannelData(0);
     const int16 = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      int16[i] = Math.max(-32768, Math.min(32767, Math.floor(input[i] * 32768)));
-    }
+    for (let i = 0; i < input.length; i++) int16[i] = Math.max(-32768, Math.min(32767, Math.floor(input[i] * 32768)));
     const base64 = btoa(String.fromCharCode(...new Uint8Array(int16.buffer)));
     sendMsg({ type: 'audio', audio: base64 });
   };
-
   micActive = true;
   micBtn.classList.add('active');
 }
-
 function stopMic() {
-  micActive = false;
-  micBtn.classList.remove('active');
+  micActive = false; micBtn.classList.remove('active');
   if (micProcessor) { micProcessor.disconnect(); micProcessor = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
 }
 
-// ─── Camera ───────────────────────────────────────────
-async function toggleCamera() {
-  if (cameraActive) {
-    stopCamera();
-  } else {
-    await startCamera();
-  }
-}
-
+// Camera
+async function toggleCamera() { if (cameraActive) stopCamera(); else await startCamera(); }
 async function startCamera() {
   connectWS();
-
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-  } catch {
-    appendConv('Camera access denied', 'system');
-    return;
-  }
-
-  cameraVideo.srcObject = cameraStream;
-  cameraVideo.style.display = 'block';
-  cameraOff.style.display = 'none';
-
-  cameraCanvas.width = 640;
-  cameraCanvas.height = 480;
+  try { cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); }
+  catch { appendConv('Camera access denied', 'system'); return; }
+  cameraVideo.srcObject = cameraStream; cameraVideo.style.display = 'block'; cameraOff.style.display = 'none';
+  cameraCanvas.width = 640; cameraCanvas.height = 480;
   const ctx = cameraCanvas.getContext('2d');
-
-  // Capture a JPEG frame every 1s
   cameraInterval = setInterval(() => {
     if (!cameraActive || !ws || ws.readyState !== WebSocket.OPEN) return;
     ctx.drawImage(cameraVideo, 0, 0, 640, 480);
     const dataUrl = cameraCanvas.toDataURL('image/jpeg', 0.7);
-    const base64 = dataUrl.split(',')[1];
-    sendMsg({ type: 'video_frame', frame: base64, mimeType: 'image/jpeg' });
+    sendMsg({ type: 'video_frame', frame: dataUrl.split(',')[1], mimeType: 'image/jpeg' });
   }, 1000);
-
-  cameraActive = true;
-  cameraBtn.classList.add('active');
+  cameraActive = true; cameraBtn.classList.add('active');
 }
-
 function stopCamera() {
-  cameraActive = false;
-  cameraBtn.classList.remove('active');
+  cameraActive = false; cameraBtn.classList.remove('active');
   if (cameraInterval) { clearInterval(cameraInterval); cameraInterval = null; }
   if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-  cameraVideo.style.display = 'none';
-  cameraOff.style.display = '';
+  cameraVideo.style.display = 'none'; cameraOff.style.display = '';
 }
 
-// ─── Text input ───────────────────────────────────────
+// Text input
 function sendText() {
   const text = textInput.value.trim();
   if (!text) return;
-
   connectWS();
   appendConv('<span class="label">You: </span>' + escHtml(text), 'user');
   sendMsg({ type: 'text', text });
   textInput.value = '';
 }
+textInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } });
 
-textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendText();
-  }
-});
-
-// Auto-connect on load
+// Auto-connect
 connectWS();
 </script>
 </body>

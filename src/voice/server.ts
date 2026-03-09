@@ -1,9 +1,9 @@
-import { createServer, type Server } from "http";
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "http";
 import { WebSocketServer, WebSocket as WS } from "ws";
 import { query } from "../sdk.js";
 import type { VoiceServerOptions, ClientMessage, ServerMessage, MultimodalAdapter } from "./adapter.js";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
+import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from "fs";
+import { join, dirname, resolve, relative } from "path";
 import { fileURLToPath } from "url";
 import { OpenAIRealtimeAdapter } from "./openai-realtime.js";
 import { GeminiLiveAdapter } from "./gemini-live.js";
@@ -76,10 +76,79 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 		return "(no response)";
 	};
 
+	// ── File API helpers ────────────────────────────────────────────────
+	const HIDDEN_DIRS = new Set([".git", "node_modules", ".gitagent", "dist", ".next", "__pycache__", ".venv"]);
+	const agentRoot = resolve(opts.agentDir);
+
+	/** Resolve and validate a requested path stays within agentDir */
+	function safePath(reqPath: string): string | null {
+		const abs = resolve(agentRoot, reqPath);
+		if (!abs.startsWith(agentRoot)) return null;
+		return abs;
+	}
+
+	interface FileEntry {
+		name: string;
+		path: string;
+		type: "file" | "directory";
+		children?: FileEntry[];
+	}
+
+	function listDir(dirPath: string, depth: number): FileEntry[] {
+		if (depth > 4) return [];
+		try {
+			const entries = readdirSync(dirPath);
+			const result: FileEntry[] = [];
+			for (const name of entries) {
+				if (name.startsWith(".") && HIDDEN_DIRS.has(name)) continue;
+				if (HIDDEN_DIRS.has(name)) continue;
+				const fullPath = join(dirPath, name);
+				const relPath = relative(agentRoot, fullPath);
+				try {
+					const st = statSync(fullPath);
+					if (st.isDirectory()) {
+						result.push({
+							name,
+							path: relPath,
+							type: "directory",
+							children: listDir(fullPath, depth + 1),
+						});
+					} else if (st.isFile()) {
+						result.push({ name, path: relPath, type: "file" });
+					}
+				} catch {
+					// skip unreadable entries
+				}
+			}
+			// Sort: directories first, then alphabetical
+			result.sort((a, b) => {
+				if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+				return a.name.localeCompare(b.name);
+			});
+			return result;
+		} catch {
+			return [];
+		}
+	}
+
+	function readBody(req: IncomingMessage): Promise<string> {
+		return new Promise((res, rej) => {
+			let body = "";
+			req.on("data", (c: Buffer) => { body += c.toString(); });
+			req.on("end", () => res(body));
+			req.on("error", rej);
+		});
+	}
+
+	function jsonReply(res: ServerResponse, status: number, data: any) {
+		res.writeHead(status, { "Content-Type": "application/json" });
+		res.end(JSON.stringify(data));
+	}
+
 	// HTTP server
-	const httpServer: Server = createServer((req, res) => {
+	const httpServer: Server = createServer(async (req, res) => {
 		res.setHeader("Access-Control-Allow-Origin", "*");
-		res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+		res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
 		res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
 		if (req.method === "OPTIONS") {
@@ -87,12 +156,58 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 			return res.end();
 		}
 
-		if (req.url === "/health") {
-			res.writeHead(200, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ status: "ok" }));
-		} else if (req.url === "/" || req.url === "/test") {
+		const url = new URL(req.url || "/", `http://localhost:${port}`);
+
+		if (url.pathname === "/health") {
+			jsonReply(res, 200, { status: "ok" });
+
+		} else if (url.pathname === "/" || url.pathname === "/test") {
 			res.writeHead(200, { "Content-Type": "text/html" });
 			res.end(uiHtml);
+
+		} else if (url.pathname === "/api/files" && req.method === "GET") {
+			// List files as a tree
+			const reqPath = url.searchParams.get("path") || ".";
+			const abs = safePath(reqPath);
+			if (!abs) return jsonReply(res, 403, { error: "Path outside workspace" });
+			const tree = listDir(abs, 0);
+			jsonReply(res, 200, { root: relative(agentRoot, abs) || ".", entries: tree });
+
+		} else if (url.pathname === "/api/file" && req.method === "GET") {
+			// Read a file
+			const reqPath = url.searchParams.get("path");
+			if (!reqPath) return jsonReply(res, 400, { error: "Missing path param" });
+			const abs = safePath(reqPath);
+			if (!abs) return jsonReply(res, 403, { error: "Path outside workspace" });
+			if (!existsSync(abs)) return jsonReply(res, 404, { error: "File not found" });
+			try {
+				const st = statSync(abs);
+				if (st.size > 1024 * 1024) return jsonReply(res, 413, { error: "File too large (>1MB)" });
+				const content = readFileSync(abs, "utf-8");
+				jsonReply(res, 200, { path: reqPath, content });
+			} catch (err: any) {
+				jsonReply(res, 500, { error: err.message });
+			}
+
+		} else if (url.pathname === "/api/file" && req.method === "PUT") {
+			// Write a file
+			const body = await readBody(req);
+			let parsed: { path: string; content: string };
+			try {
+				parsed = JSON.parse(body);
+			} catch {
+				return jsonReply(res, 400, { error: "Invalid JSON body" });
+			}
+			if (!parsed.path || parsed.content === undefined) return jsonReply(res, 400, { error: "Missing path or content" });
+			const abs = safePath(parsed.path);
+			if (!abs) return jsonReply(res, 403, { error: "Path outside workspace" });
+			try {
+				writeFileSync(abs, parsed.content, "utf-8");
+				jsonReply(res, 200, { ok: true, path: parsed.path });
+			} catch (err: any) {
+				jsonReply(res, 500, { error: err.message });
+			}
+
 		} else {
 			res.writeHead(404);
 			res.end();
