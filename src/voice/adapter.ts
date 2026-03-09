@@ -11,8 +11,11 @@ export interface ServerAudioDelta { type: "audio_delta"; audio: string; }
 export interface ServerTranscript { type: "transcript"; role: "user" | "assistant"; text: string; partial?: boolean; }
 export interface ServerAgentWorking { type: "agent_working"; query: string; }
 export interface ServerAgentDone { type: "agent_done"; result: string; }
+export interface ServerToolCall { type: "tool_call"; toolName: string; args: Record<string, any>; }
+export interface ServerToolResult { type: "tool_result"; toolName: string; content: string; isError: boolean; }
+export interface ServerAgentThinking { type: "agent_thinking"; text: string; }
 export interface ServerError { type: "error"; message: string; }
-export type ServerMessage = ServerAudioDelta | ServerTranscript | ServerAgentWorking | ServerAgentDone | ServerError;
+export type ServerMessage = ServerAudioDelta | ServerTranscript | ServerAgentWorking | ServerAgentDone | ServerToolCall | ServerToolResult | ServerAgentThinking | ServerError;
 
 // Adapter interface — adapters receive ClientMessages, emit ServerMessages
 export interface MultimodalAdapter {

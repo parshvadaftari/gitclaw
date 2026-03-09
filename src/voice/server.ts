@@ -45,44 +45,50 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 	const port = opts.port || 3333;
 	const uiHtml = loadUIHtml();
 
-	// Tool handler: runs gitclaw query and collects response text
-	const toolHandler = async (prompt: string): Promise<string> => {
-		let composioTools: GCToolDefinition[] = [];
-		if (composioAdapter) {
-			try { composioTools = await composioAdapter.getTools(); } catch { /* non-fatal */ }
-		}
-
-		const result = query({
-			prompt,
-			dir: opts.agentDir,
-			model: opts.model,
-			env: opts.env,
-			...(composioTools.length ? { tools: composioTools } : {}),
-		});
-
-		let text = "";
-		const toolResults: string[] = [];
-		const errors: string[] = [];
-
-		for await (const msg of result) {
-			if (msg.type === "assistant" && msg.content) {
-				text += msg.content;
-			} else if (msg.type === "tool_result" && msg.content) {
-				toolResults.push(msg.content);
-				console.log(dim(`[voice] Tool ${msg.toolName}: ${msg.content.slice(0, 100)}${msg.content.length > 100 ? "..." : ""}`));
-			} else if (msg.type === "system" && msg.subtype === "error") {
-				errors.push(msg.content);
-				console.error(dim(`[voice] Agent error: ${msg.content}`));
-			} else if (msg.type === "delta") {
-				// Skip deltas, we get the full text from assistant message
+	// Creates a per-connection tool handler that can stream events to the browser
+	function createToolHandler(sendToBrowser: (msg: ServerMessage) => void) {
+		return async (prompt: string): Promise<string> => {
+			let composioTools: GCToolDefinition[] = [];
+			if (composioAdapter) {
+				try { composioTools = await composioAdapter.getTools(); } catch { /* non-fatal */ }
 			}
-		}
 
-		if (text) return text;
-		if (errors.length > 0) return `Error: ${errors.join("; ")}`;
-		if (toolResults.length > 0) return toolResults.join("\n");
-		return "(no response)";
-	};
+			const result = query({
+				prompt,
+				dir: opts.agentDir,
+				model: opts.model,
+				env: opts.env,
+				...(composioTools.length ? { tools: composioTools } : {}),
+			});
+
+			let text = "";
+			const toolResults: string[] = [];
+			const errors: string[] = [];
+
+			for await (const msg of result) {
+				if (msg.type === "assistant" && msg.content) {
+					text += msg.content;
+				} else if (msg.type === "tool_use") {
+					sendToBrowser({ type: "tool_call", toolName: msg.toolName, args: msg.args });
+					console.log(dim(`[voice] Tool call: ${msg.toolName}(${JSON.stringify(msg.args).slice(0, 80)})`));
+				} else if (msg.type === "tool_result") {
+					sendToBrowser({ type: "tool_result", toolName: msg.toolName, content: msg.content, isError: msg.isError });
+					if (msg.content) toolResults.push(msg.content);
+					console.log(dim(`[voice] Tool ${msg.toolName}: ${msg.content.slice(0, 100)}${msg.content.length > 100 ? "..." : ""}`));
+				} else if (msg.type === "system" && msg.subtype === "error") {
+					errors.push(msg.content);
+					console.error(dim(`[voice] Agent error: ${msg.content}`));
+				} else if (msg.type === "delta" && msg.deltaType === "thinking") {
+					sendToBrowser({ type: "agent_thinking", text: msg.content });
+				}
+			}
+
+			if (text) return text;
+			if (errors.length > 0) return `Error: ${errors.join("; ")}`;
+			if (toolResults.length > 0) return toolResults.join("\n");
+			return "(no response)";
+		};
+	}
 
 	// ── File API helpers ────────────────────────────────────────────────
 	const HIDDEN_DIRS = new Set([".git", "node_modules", ".gitagent", "dist", ".next", "__pycache__", ".venv"]);
@@ -291,13 +297,12 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 		console.log(dim("[voice] Browser connected"));
 
 		const adapter = createAdapter(opts);
+		const sendToBrowser = (msg: ServerMessage) => safeSend(browserWs, JSON.stringify(msg));
 
 		try {
 			await adapter.connect({
-				toolHandler,
-				onMessage: (msg: ServerMessage) => {
-					safeSend(browserWs, JSON.stringify(msg));
-				},
+				toolHandler: createToolHandler(sendToBrowser),
+				onMessage: sendToBrowser,
 			});
 			console.log(dim(`[voice] Adapter ready (${opts.adapter})`));
 		} catch (err: any) {

@@ -74,6 +74,14 @@
   .conv-msg.assistant { color: #e6edf3; }
   .conv-msg.assistant .label { color: #3fb950; font-weight: 600; }
   .conv-msg.tool { color: #d29922; }
+  .conv-msg.tool-call { color: #d2a8ff; font-size: 11px; }
+  .conv-msg.tool-call .label { color: #bc8cff; font-weight: 600; }
+  .conv-msg.tool-result { color: #7ee787; font-size: 11px; }
+  .conv-msg.tool-result.error { color: #f85149; }
+  .conv-msg.tool-result .label { font-weight: 600; }
+  .conv-msg.thinking { color: #6e7681; font-size: 11px; font-style: italic; }
+  .conv-msg .tool-args { color: #8b949e; font-size: 10px; margin-top: 2px; word-break: break-all; max-height: 60px; overflow: hidden; }
+  .conv-msg .tool-content { color: #8b949e; font-size: 10px; margin-top: 2px; white-space: pre-wrap; max-height: 80px; overflow-y: auto; background: #161b22; border-radius: 4px; padding: 4px 8px; }
   .conv-msg.system { color: #8b949e; font-style: italic; }
   .input-bar { display: flex; padding: 12px 16px; border-top: 1px solid #21262d; gap: 8px; }
   .input-bar input {
@@ -375,8 +383,39 @@ function appendConv(h,c){var d=document.createElement('div');d.className='conv-m
 function connectWS(){if(ws)return;setStatus('Connecting...','');ws=new WebSocket('ws://'+window.location.host);ws.onopen=function(){setStatus('Connected','connected');};ws.onmessage=function(e){try{handleServerMessage(JSON.parse(e.data));}catch(x){}};ws.onerror=function(){setStatus('Connection error','error');};ws.onclose=function(){ws=null;setStatus('Disconnected','');stopMic();stopCamera();};}
 function sendMsg(m){if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(m));}
 
-var assistantText='';
-function handleServerMessage(m){switch(m.type){case'audio_delta':playAudioDelta(m.audio);break;case'transcript':if(m.role==='user'&&!m.partial)appendConv('<span class="label">You: </span>'+escHtml(m.text),'user');else if(m.role==='assistant'){if(m.partial)assistantText+=m.text;else{if(assistantText){appendConv('<span class="label">Assistant: </span>'+escHtml(assistantText),'assistant');assistantText='';}else appendConv('<span class="label">Assistant: </span>'+escHtml(m.text),'assistant');}}break;case'agent_working':appendConv('Running: '+escHtml(m.query),'tool');setStatus('Agent working...','connected');break;case'agent_done':setStatus('Connected','connected');if(filesLoaded)loadFileTree();break;case'error':appendConv('Error: '+escHtml(m.message),'system');break;}}
+var assistantText='',thinkingEl=null;
+function handleServerMessage(m){switch(m.type){
+  case'audio_delta':playAudioDelta(m.audio);break;
+  case'transcript':
+    if(m.role==='user'&&!m.partial)appendConv('<span class="label">You: </span>'+escHtml(m.text),'user');
+    else if(m.role==='assistant'){if(m.partial)assistantText+=m.text;else{if(assistantText){appendConv('<span class="label">Assistant: </span>'+escHtml(assistantText),'assistant');assistantText='';}else appendConv('<span class="label">Assistant: </span>'+escHtml(m.text),'assistant');}}
+    break;
+  case'agent_working':
+    appendConv('<span class="label">Agent: </span>'+escHtml(m.query),'tool');
+    setStatus('Agent working...','connected');break;
+  case'agent_done':
+    thinkingEl=null;
+    setStatus('Connected','connected');
+    if(filesLoaded)loadFileTree();break;
+  case'tool_call':
+    thinkingEl=null;
+    var argsStr=JSON.stringify(m.args,null,2);
+    var argsPreview=argsStr.length>200?argsStr.slice(0,200)+'...':argsStr;
+    appendConv('<span class="label">Tool: </span>'+escHtml(m.toolName)+'<div class="tool-args">'+escHtml(argsPreview)+'</div>','tool-call');
+    break;
+  case'tool_result':
+    var cls='tool-result'+(m.isError?' error':'');
+    var lbl=m.isError?'Error: ':'Result: ';
+    var preview=m.content.length>300?m.content.slice(0,300)+'...':m.content;
+    appendConv('<span class="label">'+escHtml(m.toolName)+' '+lbl+'</span><div class="tool-content">'+escHtml(preview)+'</div>',cls);
+    break;
+  case'agent_thinking':
+    if(!thinkingEl){thinkingEl=document.createElement('div');thinkingEl.className='conv-msg thinking';thinkingEl.innerHTML='<span class="label">Thinking: </span><span class="thinking-text"></span>';conv.appendChild(thinkingEl);}
+    thinkingEl.querySelector('.thinking-text').textContent+=m.text;
+    conv.scrollTop=conv.scrollHeight;
+    break;
+  case'error':appendConv('Error: '+escHtml(m.message),'system');break;
+}}
 function escHtml(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
 var audioQueue=[],isPlaying=false,currentSource=null,nextPlayTime=0;
