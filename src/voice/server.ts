@@ -53,17 +53,24 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 			if (composioAdapter) {
 				try {
 					connectedSlugs = await composioAdapter.getConnectedToolkitSlugs();
+					console.error(`[voice] Connected toolkit slugs: [${connectedSlugs.join(", ")}]`);
 					if (connectedSlugs.length > 0) {
 						// Try semantic search first, fall back to all connected tools
 						composioTools = await composioAdapter.getToolsForQuery(prompt);
+						console.error(`[voice] Semantic search returned ${composioTools.length} tools`);
 						if (composioTools.length === 0) {
 							composioTools = await composioAdapter.getTools();
+							console.error(`[voice] Fallback getTools returned ${composioTools.length} tools`);
 						}
-						console.log(dim(`[voice] Composio: ${composioTools.length} tools injected: ${composioTools.map(t => t.name).join(", ")}`));
+						console.error(`[voice] Composio: ${composioTools.length} tools: ${composioTools.map(t => t.name).join(", ")}`);
+					} else {
+						console.error(`[voice] No connected toolkits found for user`);
 					}
 				} catch (err: any) {
-					console.error(dim(`[voice] Composio tool fetch failed: ${err.message}`));
+					console.error(`[voice] Composio tool fetch FAILED: ${err.message}\n${err.stack}`);
 				}
+			} else {
+				console.error(`[voice] composioAdapter is NULL — COMPOSIO_API_KEY not set?`);
 			}
 
 			// Build system prompt suffix: always tell the agent about connected services
