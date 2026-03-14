@@ -2,7 +2,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { WebSocketServer, WebSocket as WS } from "ws";
 import { query } from "../sdk.js";
 import type { VoiceServerOptions, ClientMessage, ServerMessage, MultimodalAdapter } from "./adapter.js";
-import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, mkdirSync, appendFileSync } from "fs";
+import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, mkdirSync, appendFileSync, rmSync } from "fs";
 import { execSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 import { writeFile, readFile, mkdir, stat } from "fs/promises";
@@ -356,51 +356,74 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 	} catch { /* fallback to default */ }
 	const uiHtml = loadUIHtml().replace(/\{\{AGENT_NAME\}\}/g, agentName);
 
+	// Current date/time context injected into every query
+	function getCurrentDateTimeContext(): string {
+		const now = new Date();
+		const day = now.toLocaleDateString("en-US", { weekday: "long" });
+		const date = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+		const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+		return `Current date and time: ${day}, ${date}, ${time}.`;
+	}
+
+	// Shared helper: fetch Composio tools + build prompt suffix for any channel
+	async function getComposioContext(prompt: string): Promise<{ tools: GCToolDefinition[]; promptSuffix: string | undefined }> {
+		let composioTools: GCToolDefinition[] = [];
+		let connectedSlugs: string[] = [];
+		if (composioAdapter) {
+			try {
+				connectedSlugs = await composioAdapter.getConnectedToolkitSlugs();
+				console.error(`[voice] Connected toolkit slugs: [${connectedSlugs.join(", ")}]`);
+				if (connectedSlugs.length > 0) {
+					composioTools = await composioAdapter.getToolsForQuery(prompt);
+					console.error(`[voice] Semantic search returned ${composioTools.length} tools`);
+					if (composioTools.length === 0) {
+						const allTools = await composioAdapter.getTools();
+						composioTools = allTools.slice(0, 15);
+						console.error(`[voice] Fallback capped to ${composioTools.length}/${allTools.length} tools`);
+					}
+					console.error(`[voice] Composio: ${composioTools.length} tools: ${composioTools.map(t => t.name).join(", ")}`);
+				} else {
+					console.error(`[voice] No connected toolkits found for user`);
+				}
+			} catch (err: any) {
+				console.error(`[voice] Composio tool fetch FAILED: ${err.message}\n${err.stack}`);
+			}
+		} else {
+			console.error(`[voice] composioAdapter is NULL — COMPOSIO_API_KEY not set?`);
+		}
+
+		let promptSuffix: string | undefined;
+		if (composioAdapter) {
+			const parts = [
+				`You have access to external services via Composio integration (Gmail, Google Calendar, GitHub, Slack, and many more).`,
+				`You CAN perform real actions — send emails, read emails, check calendars, create events, manage repos, etc.`,
+				`NEVER tell the user you "can't access" or "don't have access to" external services. Always attempt to use the available Composio tools (prefixed "composio_") first.`,
+				`When the user asks to send an email, use the composio SEND_EMAIL tool directly — do NOT create a draft unless they explicitly ask for a draft.`,
+				`When the user asks about their calendar, use the composio calendar tools to fetch real events.`,
+				`Prefer Composio tools over CLI commands for any external service interaction.`,
+			];
+			if (connectedSlugs.length > 0) {
+				const services = connectedSlugs.map((s) => s.replace(/_/g, " ")).join(", ");
+				parts.unshift(`Currently connected services: ${services}.`);
+			}
+			promptSuffix = parts.join(" ");
+		}
+
+		return { tools: composioTools, promptSuffix };
+	}
+
 	// Creates a per-connection tool handler that can stream events to the browser
 	function createToolHandler(sendToBrowser: (msg: ServerMessage) => void) {
 		return async (prompt: string): Promise<string> => {
-			let composioTools: GCToolDefinition[] = [];
-			let connectedSlugs: string[] = [];
-			if (composioAdapter) {
-				try {
-					connectedSlugs = await composioAdapter.getConnectedToolkitSlugs();
-					console.error(`[voice] Connected toolkit slugs: [${connectedSlugs.join(", ")}]`);
-					if (connectedSlugs.length > 0) {
-						// Try semantic search first, fall back to all connected tools
-						composioTools = await composioAdapter.getToolsForQuery(prompt);
-						console.error(`[voice] Semantic search returned ${composioTools.length} tools`);
-						if (composioTools.length === 0) {
-							composioTools = await composioAdapter.getTools();
-							console.error(`[voice] Fallback getTools returned ${composioTools.length} tools`);
-						}
-						console.error(`[voice] Composio: ${composioTools.length} tools: ${composioTools.map(t => t.name).join(", ")}`);
-					} else {
-						console.error(`[voice] No connected toolkits found for user`);
-					}
-				} catch (err: any) {
-					console.error(`[voice] Composio tool fetch FAILED: ${err.message}\n${err.stack}`);
-				}
-			} else {
-				console.error(`[voice] composioAdapter is NULL — COMPOSIO_API_KEY not set?`);
-			}
+			const { tools: composioTools, promptSuffix: composioPromptSuffix } = await getComposioContext(prompt);
 
-			// Build system prompt suffix: always tell the agent about Composio capabilities
-			let systemPromptSuffix: string | undefined;
-			if (composioAdapter) {
-				const parts = [
-					`You have access to external services via Composio integration (Gmail, Google Calendar, GitHub, Slack, and many more).`,
-					`You CAN perform real actions — send emails, read emails, check calendars, create events, manage repos, etc.`,
-					`NEVER tell the user you "can't access" or "don't have access to" external services. Always attempt to use the available Composio tools (prefixed "composio_") first.`,
-					`When the user asks to send an email, use the composio SEND_EMAIL tool directly — do NOT create a draft unless they explicitly ask for a draft.`,
-					`When the user asks about their calendar, use the composio calendar tools to fetch real events.`,
-					`Prefer Composio tools over CLI commands for any external service interaction.`,
-				];
-				if (connectedSlugs.length > 0) {
-					const services = connectedSlugs.map((s) => s.replace(/_/g, " ")).join(", ");
-					parts.unshift(`Currently connected services: ${services}.`);
-				}
-				systemPromptSuffix = parts.join(" ");
+			let systemPromptSuffix = getCurrentDateTimeContext();
+			if (whatsappSock && whatsappConnected) {
+				systemPromptSuffix += "\nYou can send WhatsApp messages using the send_whatsapp_message tool and set up auto-response triggers using create_trigger.";
+			} else {
+				systemPromptSuffix += "\nYou can set up auto-response triggers using create_trigger for when messaging platforms are connected.";
 			}
+			if (composioPromptSuffix) systemPromptSuffix += "\n\n" + composioPromptSuffix;
 
 			// Inject shared context (memory + conversation summary)
 			const agentContext = await getAgentContext(opts.agentDir, activeBranch);
@@ -408,12 +431,17 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 				systemPromptSuffix = (systemPromptSuffix || "") + "\n\n" + agentContext;
 			}
 
+			const uiTools: GCToolDefinition[] = [
+				...createTriggerTools(opts.agentDir),
+				...(whatsappSock && whatsappConnected ? createWhatsAppTools(whatsappSock, opts.agentDir) : []),
+				...composioTools,
+			];
 			const result = query({
 				prompt,
 				dir: opts.agentDir,
 				model: opts.model,
 				env: opts.env,
-				...(composioTools.length ? { tools: composioTools } : {}),
+				...(uiTools.length ? { tools: uiTools } : {}),
 				...(systemPromptSuffix ? { systemPromptSuffix } : {}),
 			});
 
@@ -468,6 +496,13 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 	let telegramPolling = false;
 	let telegramPollTimer: ReturnType<typeof setTimeout> | null = null;
 	let telegramOffset = 0;
+	// Allowed Telegram usernames — comma-separated in .env, empty = allow all
+	let telegramAllowedUsers = new Set(
+		(process.env.TELEGRAM_ALLOWED_USERS || "")
+			.split(",")
+			.map(s => s.trim().toLowerCase().replace(/^@/, ""))
+			.filter(Boolean),
+	);
 
 	function stopTelegramPolling() {
 		telegramPolling = false;
@@ -503,6 +538,105 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 		}
 	}
 
+	/** Collect all files recursively under a dir with their mtimes */
+	function snapshotFiles(dir: string, base: string = ""): Map<string, number> {
+		const result = new Map<string, number>();
+		try {
+			for (const name of readdirSync(dir)) {
+				if (name.startsWith(".") || name === "node_modules" || name === "dist") continue;
+				const full = join(dir, name);
+				const rel = base ? `${base}/${name}` : name;
+				try {
+					const st = statSync(full);
+					if (st.isDirectory()) {
+						for (const [k, v] of snapshotFiles(full, rel)) result.set(k, v);
+					} else if (st.isFile()) {
+						result.set(rel, st.mtimeMs);
+					}
+				} catch { /* skip */ }
+			}
+		} catch { /* skip */ }
+		return result;
+	}
+
+	/** Find new or modified files by comparing snapshots */
+	function diffSnapshots(before: Map<string, number>, after: Map<string, number>): string[] {
+		const changed: string[] = [];
+		for (const [path, mtime] of after) {
+			if (!before.has(path) || before.get(path)! < mtime) changed.push(path);
+		}
+		return changed;
+	}
+
+	const SENDABLE_EXTS = new Set([
+		"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "rtf",
+		"png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
+		"zip", "tar", "gz", "json", "xml", "html", "css", "js", "ts", "py", "md",
+		"mp3", "mp4", "wav", "ogg", "webm",
+	]);
+
+	async function sendTelegramFile(chatId: number, filePath: string, agentDir: string, caption?: string) {
+		const abs = join(agentDir, filePath);
+		if (!existsSync(abs)) return;
+		const st = statSync(abs);
+		if (st.size > 50 * 1024 * 1024) return; // Telegram 50MB limit
+		const ext = filePath.split(".").pop()?.toLowerCase() || "";
+		const isImage = /^(png|jpg|jpeg|gif|webp|bmp)$/.test(ext);
+
+		const formBoundary = `----FormBoundary${Date.now()}`;
+		const fileData = readFileSync(abs);
+		const fileName = filePath.split("/").pop() || "file";
+
+		// Build multipart form
+		const fieldName = isImage ? "photo" : "document";
+		const endpoint = isImage ? "sendPhoto" : "sendDocument";
+		const parts: Buffer[] = [];
+		const nl = Buffer.from("\r\n");
+
+		// chat_id field
+		parts.push(Buffer.from(`--${formBoundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${chatId}`));
+		parts.push(nl);
+
+		// caption field
+		if (caption) {
+			const cap = caption.length > 1024 ? caption.slice(0, 1021) + "..." : caption;
+			parts.push(Buffer.from(`--${formBoundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${cap}`));
+			parts.push(nl);
+		}
+
+		// file field
+		const mimeMap: Record<string, string> = {
+			pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+			zip: "application/zip", csv: "text/csv", txt: "text/plain", json: "application/json", md: "text/markdown",
+		};
+		const mime = mimeMap[ext] || "application/octet-stream";
+		parts.push(Buffer.from(`--${formBoundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${fileName}"\r\nContent-Type: ${mime}\r\n\r\n`));
+		parts.push(fileData);
+		parts.push(nl);
+		parts.push(Buffer.from(`--${formBoundary}--\r\n`));
+
+		const body = Buffer.concat(parts);
+
+		try {
+			const resp = await fetch(`https://api.telegram.org/bot${telegramToken}/${endpoint}`, {
+				method: "POST",
+				headers: { "Content-Type": `multipart/form-data; boundary=${formBoundary}` },
+				body,
+			});
+			const rd = await resp.json() as any;
+			if (rd.ok) {
+				console.log(dim(`[telegram] Sent file: ${fileName}`));
+			} else {
+				console.error(dim(`[telegram] Failed to send file ${fileName}: ${rd.description}`));
+			}
+		} catch (err: any) {
+			console.error(dim(`[telegram] File send error: ${err.message}`));
+		}
+	}
+
 	function startTelegramPolling(agentDir: string, serverOpts: VoiceServerOptions) {
 		if (telegramPolling) return;
 		telegramPolling = true;
@@ -523,6 +657,17 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 
 						const chatId = msg.chat.id;
 						const fromName = msg.from?.first_name || "User";
+						const fromUsername = (msg.from?.username || "").toLowerCase();
+
+						// Security: reject messages from unauthorized users
+						// Empty = block all, * = allow all, otherwise check username list
+						if (!telegramAllowedUsers.has("*")) {
+							if (telegramAllowedUsers.size === 0 || !telegramAllowedUsers.has(fromUsername)) {
+								console.log(dim(`[telegram] Blocked message from unauthorized user: @${fromUsername || "(no username)"} (${fromName})`));
+								continue;
+							}
+						}
+
 						let userText = msg.text || msg.caption || "";
 						let imageContext = "";
 
@@ -551,6 +696,27 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 						const fullText = `${userText}${imageContext}`.trim();
 						console.log(dim(`[telegram] ${fromName}: ${fullText.slice(0, 100)}`));
 
+						// ── Trigger check ──
+						if (userText) {
+							const trigger = matchTrigger(agentDir, "telegram", fromName, userText);
+							if (trigger) {
+								console.log(dim(`[triggers] Matched trigger ${trigger.id} for Telegram/${fromName}: "${userText.slice(0, 60)}" → "${trigger.reply.slice(0, 60)}"`));
+								try {
+									await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: JSON.stringify({ chat_id: chatId, text: trigger.reply }),
+									});
+									const triggerLog: ServerMessage = { type: "transcript", role: "assistant", text: `[Trigger → ${fromName}]: ${trigger.reply}` };
+									appendMessage(serverOpts.agentDir, activeBranch, triggerLog);
+									broadcastToBrowsers(triggerLog);
+								} catch (err: any) {
+									console.error(dim(`[triggers] Telegram auto-reply failed: ${err.message}`));
+								}
+								continue; // Skip agent processing for triggered messages
+							}
+						}
+
 						// Save to shared chat history & broadcast to web UI
 						const userMsg: ServerMessage = { type: "transcript", role: "user", text: `[Telegram] ${fromName}: ${fullText}` };
 						appendMessage(serverOpts.agentDir, activeBranch, userMsg);
@@ -563,22 +729,51 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 							body: JSON.stringify({ chat_id: chatId, action: "typing" }),
 						}).catch(() => {});
 
+						// Snapshot files before agent runs
+						const beforeFiles = snapshotFiles(agentDir);
+
 						// Run agent query
 						try {
 							const agentWorking: ServerMessage = { type: "agent_working", query: fullText };
 							broadcastToBrowsers(agentWorking);
 							appendMessage(serverOpts.agentDir, activeBranch, agentWorking);
 
+							const tgContext = await getAgentContext(agentDir, activeBranch);
+							const tgComposio = await getComposioContext(fullText);
+							let tgSystemPrompt = "You are an AI assistant responding to a Telegram user. " +
+								"Any files you create or modify will be AUTOMATICALLY sent back to the user on Telegram. " +
+								"When asked to create documents (PDF, Word, PPT, spreadsheets, images, text files, etc.), " +
+								"write them to the workspace/ directory. The files will be delivered to the user immediately after you finish. " +
+								"Keep text responses concise since they appear in a chat interface.";
+							if (whatsappSock && whatsappConnected) {
+								tgSystemPrompt += " You can also send WhatsApp messages to contacts using the send_whatsapp_message tool. " +
+									"If you don't know a contact's number, ask the user or use list_whatsapp_contacts to check saved contacts.";
+							}
+							tgSystemPrompt += " You can set up auto-response triggers using create_trigger — e.g. 'when Kalps says hi on WhatsApp, reply hello friend'.";
+							tgSystemPrompt += "\n\n" + getCurrentDateTimeContext();
+							if (tgComposio.promptSuffix) tgSystemPrompt += "\n\n" + tgComposio.promptSuffix;
+							if (tgContext) tgSystemPrompt += "\n\n" + tgContext;
+							const tgTools = [
+								...(whatsappSock && whatsappConnected ? createWhatsAppTools(whatsappSock, agentDir) : []),
+								...createTriggerTools(agentDir),
+								...tgComposio.tools,
+							];
 							const result = query({
 								prompt: `[Telegram message from ${fromName}]: ${fullText}`,
 								dir: agentDir,
 								model: serverOpts.model,
 								env: serverOpts.env,
 								maxTurns: 10,
+								systemPrompt: tgSystemPrompt,
+								...(tgTools.length ? { tools: tgTools } : {}),
 							});
 							let reply = "";
 							for await (const m of result) {
 								if (m.type === "assistant" && m.content) reply += m.content;
+								if (m.type === "tool_use") {
+									const toolMsg: ServerMessage = { type: "tool_call", toolName: m.toolName, args: m.args ?? {} };
+									appendMessage(serverOpts.agentDir, activeBranch, toolMsg);
+								}
 							}
 							reply = reply.trim();
 
@@ -613,6 +808,27 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 								}
 							}
 
+							// Detect new/modified files and send them back to Telegram
+							const afterFiles = snapshotFiles(agentDir);
+							const newFiles = diffSnapshots(beforeFiles, afterFiles);
+							const filesToSend = newFiles.filter((f) => {
+								const ext = f.split(".").pop()?.toLowerCase() || "";
+								// Skip chat history, internal files, and non-sendable types
+								if (f.startsWith(".gitagent/") || f.startsWith("node_modules/")) return false;
+								if (f === ".env" || f === ".gitignore") return false;
+								return SENDABLE_EXTS.has(ext);
+							});
+
+							for (const filePath of filesToSend) {
+								// Send upload_document action for each file
+								await fetch(`https://api.telegram.org/bot${telegramToken}/sendChatAction`, {
+									method: "POST",
+									headers: { "Content-Type": "application/json" },
+									body: JSON.stringify({ chat_id: chatId, action: "upload_document" }),
+								}).catch(() => {});
+								await sendTelegramFile(chatId, filePath, agentDir, filePath.split("/").pop());
+							}
+
 							// Notify browser of any file changes from agent
 							broadcastToBrowsers({ type: "files_changed" } as any);
 						} catch (err: any) {
@@ -645,6 +861,474 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 				}
 			})
 			.catch(() => {});
+	}
+
+	// ── WhatsApp state ─────────────────────────────────────────────────
+	let whatsappSock: any = null;
+	let whatsappConnected = false;
+	let whatsappPhoneNumber: string | null = null;
+	let whatsappQrCode: string | null = null;
+	const whatsappSentIds = new Set<string>();
+
+	// ── WhatsApp contacts store ────────────────────────────────────────
+	interface WAContact { name: string; phone: string; jid: string }
+
+	function contactsPath(agentDir: string): string {
+		return join(agentDir, ".gitagent", "whatsapp-contacts.json");
+	}
+
+	function loadContacts(agentDir: string): WAContact[] {
+		try { return JSON.parse(readFileSync(contactsPath(agentDir), "utf-8")); }
+		catch { return []; }
+	}
+
+	function saveContacts(agentDir: string, contacts: WAContact[]): void {
+		const dir = join(agentDir, ".gitagent");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(contactsPath(agentDir), JSON.stringify(contacts, null, 2));
+	}
+
+	function findContact(agentDir: string, nameQuery: string): WAContact | undefined {
+		const q = nameQuery.toLowerCase();
+		return loadContacts(agentDir).find(c => c.name.toLowerCase() === q || c.name.toLowerCase().includes(q));
+	}
+
+	function upsertContact(agentDir: string, contact: WAContact): void {
+		const contacts = loadContacts(agentDir);
+		const idx = contacts.findIndex(c => c.jid === contact.jid);
+		if (idx >= 0) contacts[idx] = contact;
+		else contacts.push(contact);
+		saveContacts(agentDir, contacts);
+	}
+
+	/** Build WhatsApp tools that use the live Baileys socket */
+	function createWhatsAppTools(sock: any, agentDir: string): GCToolDefinition[] {
+		return [
+			{
+				name: "send_whatsapp_message",
+				description: "Send a WhatsApp message to a contact. You can specify either a phone number (with country code, e.g. '919876543210') or a contact name (if previously saved). The message will be sent immediately.",
+				inputSchema: {
+					type: "object",
+					properties: {
+						to: { type: "string", description: "Contact name or phone number (with country code, no '+' prefix, e.g. '919876543210')" },
+						message: { type: "string", description: "Message text to send" },
+					},
+					required: ["to", "message"],
+				},
+				handler: async (args: { to: string; message: string }) => {
+					let jid: string;
+					let displayName = args.to;
+
+					// Try contact lookup first, then treat as phone number
+					const contact = findContact(agentDir, args.to);
+					if (contact) {
+						jid = contact.jid;
+						displayName = contact.name;
+					} else {
+						const digits = args.to.replace(/[^0-9]/g, "");
+						if (!digits || digits.length < 7) {
+							return `Contact "${args.to}" not found. Use save_whatsapp_contact to save them first, or provide a phone number with country code (e.g. 919876543210).`;
+						}
+						jid = `${digits}@s.whatsapp.net`;
+					}
+
+					const sent = await sock.sendMessage(jid, { text: args.message });
+					if (sent?.key?.id) whatsappSentIds.add(sent.key.id);
+					console.log(dim(`[whatsapp] Sent message to ${displayName} (${jid}): ${args.message.slice(0, 80)}`));
+					return `Message sent to ${displayName}.`;
+				},
+			},
+			{
+				name: "save_whatsapp_contact",
+				description: "Save a WhatsApp contact for future use. This lets you send messages by name instead of phone number.",
+				inputSchema: {
+					type: "object",
+					properties: {
+						name: { type: "string", description: "Contact name (e.g. 'Kalps')" },
+						phone: { type: "string", description: "Phone number with country code, no '+' prefix (e.g. '919876543210')" },
+					},
+					required: ["name", "phone"],
+				},
+				handler: async (args: { name: string; phone: string }) => {
+					const digits = args.phone.replace(/[^0-9]/g, "");
+					const jid = `${digits}@s.whatsapp.net`;
+					upsertContact(agentDir, { name: args.name, phone: digits, jid });
+					console.log(dim(`[whatsapp] Saved contact: ${args.name} → ${digits}`));
+					return `Contact "${args.name}" saved with phone ${digits}.`;
+				},
+			},
+			{
+				name: "list_whatsapp_contacts",
+				description: "List all saved WhatsApp contacts.",
+				inputSchema: { type: "object", properties: {} },
+				handler: async () => {
+					const contacts = loadContacts(agentDir);
+					if (!contacts.length) return "No saved contacts. Use save_whatsapp_contact to add one.";
+					return contacts.map(c => `${c.name}: ${c.phone}`).join("\n");
+				},
+			},
+		];
+	}
+
+	// ── Message triggers ──────────────────────────────────────────────
+	interface Trigger {
+		id: string;
+		from: string;       // contact name or "*" for anyone
+		pattern: string;    // substring/regex to match in message
+		reply: string;      // auto-reply text (if set, sends directly without agent)
+		prompt?: string;    // optional: run agent with this prompt instead of static reply
+		platform: string;   // "whatsapp" | "telegram" | "*"
+		enabled: boolean;
+	}
+
+	function triggersPath(agentDir: string): string {
+		return join(agentDir, ".gitagent", "triggers.json");
+	}
+
+	function loadTriggers(agentDir: string): Trigger[] {
+		try { return JSON.parse(readFileSync(triggersPath(agentDir), "utf-8")); }
+		catch { return []; }
+	}
+
+	function saveTriggers(agentDir: string, triggers: Trigger[]): void {
+		const dir = join(agentDir, ".gitagent");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(triggersPath(agentDir), JSON.stringify(triggers, null, 2));
+	}
+
+	function matchTrigger(agentDir: string, platform: string, from: string, message: string): Trigger | undefined {
+		const triggers = loadTriggers(agentDir);
+		const fromLower = from.toLowerCase();
+		const msgLower = message.toLowerCase();
+		return triggers.find(t => {
+			if (!t.enabled) return false;
+			if (t.platform !== "*" && t.platform !== platform) return false;
+			if (t.from !== "*") {
+				// Match by contact name or phone number
+				const contact = findContact(agentDir, t.from);
+				if (contact) {
+					if (fromLower !== contact.jid && fromLower !== contact.phone && fromLower !== contact.name.toLowerCase()) return false;
+				} else if (fromLower !== t.from.toLowerCase()) return false;
+			}
+			// Pattern match — try regex first, fall back to substring
+			try {
+				if (new RegExp(t.pattern, "i").test(message)) return true;
+			} catch {
+				if (msgLower.includes(t.pattern.toLowerCase())) return true;
+			}
+			return false;
+		});
+	}
+
+	function createTriggerTools(agentDir: string): GCToolDefinition[] {
+		return [
+			{
+				name: "create_trigger",
+				description: "Create an auto-response trigger. When a message matching the pattern arrives from the specified contact, the reply is sent automatically. Use from='*' to match anyone. Use platform='*' for all platforms.",
+				inputSchema: {
+					type: "object",
+					properties: {
+						from: { type: "string", description: "Contact name, phone number, or '*' for anyone" },
+						pattern: { type: "string", description: "Text pattern to match (substring or regex)" },
+						reply: { type: "string", description: "Auto-reply message to send" },
+						platform: { type: "string", enum: ["whatsapp", "telegram", "*"], description: "Platform to trigger on (default: '*')" },
+					},
+					required: ["from", "pattern", "reply"],
+				},
+				handler: async (args: { from: string; pattern: string; reply: string; platform?: string }) => {
+					const trigger: Trigger = {
+						id: Date.now().toString(36),
+						from: args.from,
+						pattern: args.pattern,
+						reply: args.reply,
+						platform: args.platform || "*",
+						enabled: true,
+					};
+					const triggers = loadTriggers(agentDir);
+					triggers.push(trigger);
+					saveTriggers(agentDir, triggers);
+					console.log(dim(`[triggers] Created: when ${trigger.from} says "${trigger.pattern}" → "${trigger.reply}" (${trigger.platform})`));
+					return `Trigger created (id: ${trigger.id}). When ${trigger.from} sends a message matching "${trigger.pattern}", I'll auto-reply: "${trigger.reply}"`;
+				},
+			},
+			{
+				name: "list_triggers",
+				description: "List all message triggers.",
+				inputSchema: { type: "object", properties: {} },
+				handler: async () => {
+					const triggers = loadTriggers(agentDir);
+					if (!triggers.length) return "No triggers set up.";
+					return triggers.map(t =>
+						`[${t.id}] ${t.enabled ? "ON" : "OFF"} | from: ${t.from} | pattern: "${t.pattern}" | reply: "${t.reply}" | platform: ${t.platform}`
+					).join("\n");
+				},
+			},
+			{
+				name: "delete_trigger",
+				description: "Delete a trigger by its ID.",
+				inputSchema: {
+					type: "object",
+					properties: { id: { type: "string", description: "Trigger ID to delete" } },
+					required: ["id"],
+				},
+				handler: async (args: { id: string }) => {
+					const triggers = loadTriggers(agentDir);
+					const idx = triggers.findIndex(t => t.id === args.id);
+					if (idx < 0) return `Trigger "${args.id}" not found.`;
+					const removed = triggers.splice(idx, 1)[0];
+					saveTriggers(agentDir, triggers);
+					console.log(dim(`[triggers] Deleted: ${removed.id}`));
+					return `Trigger "${removed.id}" deleted (was: ${removed.from} / "${removed.pattern}").`;
+				},
+			},
+			{
+				name: "toggle_trigger",
+				description: "Enable or disable a trigger by its ID.",
+				inputSchema: {
+					type: "object",
+					properties: {
+						id: { type: "string", description: "Trigger ID" },
+						enabled: { type: "boolean", description: "true to enable, false to disable" },
+					},
+					required: ["id", "enabled"],
+				},
+				handler: async (args: { id: string; enabled: boolean }) => {
+					const triggers = loadTriggers(agentDir);
+					const t = triggers.find(t => t.id === args.id);
+					if (!t) return `Trigger "${args.id}" not found.`;
+					t.enabled = args.enabled;
+					saveTriggers(agentDir, triggers);
+					return `Trigger "${t.id}" ${args.enabled ? "enabled" : "disabled"}.`;
+				},
+			},
+		];
+	}
+
+	async function startWhatsApp(agentDir: string, serverOpts: VoiceServerOptions) {
+		const {
+			default: makeWASocket,
+			useMultiFileAuthState,
+			makeCacheableSignalKeyStore,
+			fetchLatestBaileysVersion,
+			DisconnectReason,
+			jidNormalizedUser,
+		} = await import("baileys");
+
+		const authDir = join(agentDir, ".gitagent/whatsapp-auth");
+		mkdirSync(authDir, { recursive: true });
+
+		const { state, saveCreds } = await useMultiFileAuthState(authDir);
+		const { version } = await fetchLatestBaileysVersion();
+
+		const sock = makeWASocket({
+			auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys) },
+			version,
+			browser: ["GitClaw", "cli", "0.3.1"],
+			printQRInTerminal: false,
+			syncFullHistory: false,
+			markOnlineOnConnect: false,
+		});
+		whatsappSock = sock;
+
+		sock.ev.on("connection.update", (update: any) => {
+			const { connection, lastDisconnect, qr } = update;
+			if (qr) {
+				whatsappQrCode = qr;
+				broadcastToBrowsers({ type: "whatsapp_qr", qr } as any);
+				console.log(dim("[whatsapp] QR code generated — scan with WhatsApp"));
+			}
+			if (connection === "open") {
+				whatsappConnected = true;
+				whatsappQrCode = null;
+				const jid = sock.user?.id || "";
+				whatsappPhoneNumber = jid.replace(/:.*@/, "@").replace("@s.whatsapp.net", "");
+				console.log(dim(`[whatsapp] Connected: ${whatsappPhoneNumber}`));
+				broadcastToBrowsers({ type: "whatsapp_status", connected: true, phoneNumber: whatsappPhoneNumber } as any);
+			}
+			if (connection === "close") {
+				whatsappConnected = false;
+				whatsappQrCode = null;
+				const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+				const loggedOut = statusCode === DisconnectReason.loggedOut;
+				console.log(dim(`[whatsapp] Disconnected (code=${statusCode}, loggedOut=${loggedOut})`));
+				broadcastToBrowsers({ type: "whatsapp_status", connected: false } as any);
+				if (!loggedOut) {
+					// Auto-reconnect
+					setTimeout(() => startWhatsApp(agentDir, serverOpts).catch(() => {}), 3000);
+				}
+			}
+		});
+
+		sock.ev.on("creds.update", saveCreds);
+
+		sock.ev.on("messages.upsert", async ({ messages, type }: any) => {
+			console.log(dim(`[whatsapp] upsert type=${type}, count=${messages.length}`));
+			if (type !== "notify") return;
+
+			const ownJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+			// Also track our LID (Linked Identity) — WhatsApp may route self-DMs via LID
+			const ownLid = (sock as any).user?.lid?.replace(/:.*@/, "@") || null;
+			if (!ownJid) return;
+
+			for (const msg of messages) {
+				console.log(dim(`[whatsapp] msg: remoteJid=${msg.key.remoteJid}, fromMe=${msg.key.fromMe}, ownJid=${ownJid}, ownLid=${ownLid}, id=${msg.key.id}`));
+				// Skip agent's own replies
+				if (whatsappSentIds.has(msg.key.id!)) continue;
+
+				const incomingText = msg.message?.conversation
+					|| msg.message?.extendedTextMessage?.text || "";
+				if (!incomingText) continue;
+
+				const senderJid = msg.key.remoteJid!;
+				const isSelf = senderJid === ownJid || (ownLid && senderJid === ownLid);
+
+				// ── Trigger check (runs on ALL incoming messages, not just self-DMs) ──
+				if (!isSelf && !msg.key.fromMe) {
+					// Resolve sender identity for trigger matching
+					const senderPhone = senderJid.replace("@s.whatsapp.net", "");
+					const senderContact = loadContacts(agentDir).find(c => c.jid === senderJid || c.phone === senderPhone);
+					const senderName = senderContact?.name || senderPhone;
+
+					const trigger = matchTrigger(agentDir, "whatsapp", senderContact?.name || senderJid, incomingText);
+					if (trigger) {
+						console.log(dim(`[triggers] Matched trigger ${trigger.id} for ${senderName}: "${incomingText.slice(0, 60)}" → "${trigger.reply.slice(0, 60)}"`));
+						try {
+							const sent = await sock.sendMessage(senderJid, { text: trigger.reply });
+							if (sent?.key?.id) whatsappSentIds.add(sent.key.id);
+							// Log to chat history
+							const triggerLog: ServerMessage = { type: "transcript", role: "assistant", text: `[Trigger → ${senderName}]: ${trigger.reply}` };
+							appendMessage(serverOpts.agentDir, activeBranch, triggerLog);
+							broadcastToBrowsers(triggerLog);
+						} catch (err: any) {
+							console.error(dim(`[triggers] Failed to send auto-reply: ${err.message}`));
+						}
+					}
+					continue; // Non-self messages are only processed for triggers
+				}
+
+				// ── Self-DM: full agent interaction ──
+				const text = incomingText;
+				const replyJid = senderJid;
+				console.log(dim(`[whatsapp] Self-DM: ${text.slice(0, 100)}`));
+
+				// Broadcast to browser UI
+				const userMsg: ServerMessage = { type: "transcript", role: "user", text: `[WhatsApp]: ${text}` };
+				appendMessage(serverOpts.agentDir, activeBranch, userMsg);
+				broadcastToBrowsers(userMsg);
+
+				// Send typing presence
+				try {
+					await sock.presenceSubscribe(replyJid);
+					await sock.sendPresenceUpdate("composing", replyJid);
+				} catch { /* ignore */ }
+
+				// Snapshot files before agent runs
+				const beforeFiles = snapshotFiles(agentDir);
+
+				try {
+					const agentWorking: ServerMessage = { type: "agent_working", query: text };
+					broadcastToBrowsers(agentWorking);
+					appendMessage(serverOpts.agentDir, activeBranch, agentWorking);
+
+					const waContext = await getAgentContext(agentDir, activeBranch);
+					const waComposio = await getComposioContext(text);
+					let waSystemPrompt = "You are an AI assistant responding via WhatsApp. " +
+						"Any files you create or modify will be AUTOMATICALLY sent back to the user on WhatsApp. " +
+						"When asked to create documents, write them to the workspace/ directory. " +
+						"Keep text responses concise since they appear in a chat interface. " +
+						"You can send WhatsApp messages to other people using the send_whatsapp_message tool. " +
+						"If you don't know a contact's number, ask the user or use list_whatsapp_contacts to check saved contacts. " +
+						"You can also set up auto-response triggers using create_trigger — e.g. 'when Kalps says hi, reply hello friend'.";
+					waSystemPrompt += "\n\n" + getCurrentDateTimeContext();
+					if (waComposio.promptSuffix) waSystemPrompt += "\n\n" + waComposio.promptSuffix;
+					if (waContext) waSystemPrompt += "\n\n" + waContext;
+					const waTools = [...createWhatsAppTools(sock, agentDir), ...createTriggerTools(agentDir), ...waComposio.tools];
+					const result = query({
+						prompt: `[WhatsApp message]: ${text}`,
+						dir: agentDir,
+						model: serverOpts.model,
+						env: serverOpts.env,
+						maxTurns: 10,
+						systemPrompt: waSystemPrompt,
+						tools: waTools,
+					});
+					let reply = "";
+					for await (const m of result) {
+						if (m.type === "assistant" && m.content) reply += m.content;
+					}
+					reply = reply.trim();
+
+					// Save agent response to shared history & broadcast
+					const doneMsg: ServerMessage = { type: "agent_done", result: reply.slice(0, 500) };
+					appendMessage(serverOpts.agentDir, activeBranch, doneMsg);
+					broadcastToBrowsers(doneMsg);
+
+					const assistantMsg: ServerMessage = { type: "transcript", role: "assistant", text: reply };
+					appendMessage(serverOpts.agentDir, activeBranch, assistantMsg);
+					broadcastToBrowsers(assistantMsg);
+
+					// Send reply (chunk at 4000 chars for WhatsApp)
+					if (reply) {
+						const chunks: string[] = [];
+						for (let i = 0; i < reply.length; i += 4000) chunks.push(reply.slice(i, i + 4000));
+						for (const chunk of chunks) {
+							const italicChunk = chunk.split("\n").map(line => line ? `_${line}_` : "").join("\n");
+						const sent = await sock.sendMessage(replyJid, { text: `*GitClaw:*\n${italicChunk}` });
+							if (sent?.key?.id) whatsappSentIds.add(sent.key.id);
+						}
+					}
+
+					// Detect new/modified files and send them back
+					const afterFiles = snapshotFiles(agentDir);
+					const newFiles = diffSnapshots(beforeFiles, afterFiles).filter((f) => {
+						const ext = f.split(".").pop()?.toLowerCase() || "";
+						if (f.startsWith(".gitagent/") || f.startsWith("node_modules/")) return false;
+						if (f === ".env" || f === ".gitignore") return false;
+						return SENDABLE_EXTS.has(ext);
+					});
+					for (const filePath of newFiles) {
+						const abs = join(agentDir, filePath);
+						if (!existsSync(abs)) continue;
+						const buffer = readFileSync(abs);
+						const sent = await sock.sendMessage(replyJid, {
+							document: buffer,
+							fileName: filePath.split("/").pop() || "file",
+							mimetype: "application/octet-stream",
+						});
+						if (sent?.key?.id) whatsappSentIds.add(sent.key.id);
+					}
+
+					broadcastToBrowsers({ type: "files_changed" } as any);
+				} catch (err: any) {
+					console.error(dim(`[whatsapp] Agent error: ${err.message}`));
+					try {
+						const sent = await sock.sendMessage(replyJid, { text: "*GitClaw:* _Sorry, I encountered an error processing your message._" });
+						if (sent?.key?.id) whatsappSentIds.add(sent.key.id);
+					} catch { /* ignore */ }
+				}
+			}
+		});
+	}
+
+	function stopWhatsApp(clearAuth = false) {
+		if (whatsappSock) {
+			try { whatsappSock.end(undefined); } catch { /* ignore */ }
+		}
+		whatsappSock = null;
+		whatsappConnected = false;
+		whatsappPhoneNumber = null;
+		whatsappQrCode = null;
+		whatsappSentIds.clear();
+		if (clearAuth) {
+			const authDir = join(agentRoot, ".gitagent/whatsapp-auth");
+			try { rmSync(authDir, { recursive: true, force: true }); } catch { /* ignore */ }
+		}
+	}
+
+	// Auto-connect WhatsApp if auth exists
+	const waAuthDir = join(agentRoot, ".gitagent/whatsapp-auth");
+	if (existsSync(join(waAuthDir, "creds.json"))) {
+		startWhatsApp(agentRoot, opts).catch(() => {});
 	}
 
 	/** Resolve and validate a requested path stays within agentDir */
@@ -806,6 +1490,7 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 				botName: telegramBotInfo?.first_name || null,
 				botUsername: telegramBotInfo?.username || null,
 				hasToken: !!telegramToken,
+				allowedUsers: [...telegramAllowedUsers],
 			});
 
 		} else if (url.pathname === "/api/telegram/connect" && req.method === "POST") {
@@ -813,18 +1498,36 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 			try {
 				const parsed = JSON.parse(body);
 				if (parsed.token) telegramToken = parsed.token;
+				if (parsed.allowedUsers !== undefined) {
+					telegramAllowedUsers = new Set(
+						(parsed.allowedUsers as string).split(",")
+							.map((s: string) => s.trim().toLowerCase().replace(/^@/, ""))
+							.filter(Boolean),
+					);
+				}
 			} catch { /* use existing token */ }
 			if (!telegramToken) return jsonReply(res, 400, { error: "No bot token provided" });
 
-			// Save token to .env for persistence
+			// Save token + allowed users to .env for persistence
 			const envPath = join(agentRoot, ".env");
 			let envContent = "";
 			try { envContent = readFileSync(envPath, "utf-8"); } catch { /* new file */ }
+
+			// Save token
 			if (envContent.includes("TELEGRAM_BOT_TOKEN=")) {
 				envContent = envContent.replace(/^TELEGRAM_BOT_TOKEN=.*$/m, `TELEGRAM_BOT_TOKEN=${telegramToken}`);
 			} else {
 				envContent += `\nTELEGRAM_BOT_TOKEN=${telegramToken}\n`;
 			}
+
+			// Save allowed users
+			const allowedStr = [...telegramAllowedUsers].join(",");
+			if (envContent.includes("TELEGRAM_ALLOWED_USERS=")) {
+				envContent = envContent.replace(/^TELEGRAM_ALLOWED_USERS=.*$/m, `TELEGRAM_ALLOWED_USERS=${allowedStr}`);
+			} else if (allowedStr) {
+				envContent += `TELEGRAM_ALLOWED_USERS=${allowedStr}\n`;
+			}
+
 			writeFileSync(envPath, envContent, "utf-8");
 
 			// Validate token by calling getMe
@@ -841,10 +1544,68 @@ export async function startVoiceServer(opts: VoiceServerOptions): Promise<() => 
 				jsonReply(res, 500, { error: err.message });
 			}
 
+		} else if (url.pathname === "/api/telegram/allowed-users" && req.method === "POST") {
+			const body = await readBody(req);
+			try {
+				const parsed = JSON.parse(body);
+				telegramAllowedUsers = new Set(
+					((parsed.users as string) || "").split(",")
+						.map((s: string) => s.trim().toLowerCase().replace(/^@/, ""))
+						.filter(Boolean),
+				);
+				// Persist to .env
+				const envPath = join(agentRoot, ".env");
+				let envContent = "";
+				try { envContent = readFileSync(envPath, "utf-8"); } catch { /* new file */ }
+				const allowedStr = [...telegramAllowedUsers].join(",");
+				if (envContent.includes("TELEGRAM_ALLOWED_USERS=")) {
+					envContent = envContent.replace(/^TELEGRAM_ALLOWED_USERS=.*$/m, `TELEGRAM_ALLOWED_USERS=${allowedStr}`);
+				} else if (allowedStr) {
+					envContent += `\nTELEGRAM_ALLOWED_USERS=${allowedStr}\n`;
+				} else {
+					envContent = envContent.replace(/^TELEGRAM_ALLOWED_USERS=.*\n?/m, "");
+				}
+				writeFileSync(envPath, envContent, "utf-8");
+				jsonReply(res, 200, { ok: true, allowedUsers: [...telegramAllowedUsers] });
+			} catch (err: any) {
+				jsonReply(res, 400, { error: err.message });
+			}
+
 		} else if (url.pathname === "/api/telegram/disconnect" && req.method === "POST") {
 			stopTelegramPolling();
 			telegramBotInfo = null;
 			jsonReply(res, 200, { ok: true });
+
+		// ── WhatsApp routes ─────────────────────────────────────────────
+		} else if (url.pathname === "/api/whatsapp/status" && req.method === "GET") {
+			jsonReply(res, 200, {
+				connected: whatsappConnected,
+				phoneNumber: whatsappPhoneNumber,
+				hasAuth: existsSync(join(agentRoot, ".gitagent/whatsapp-auth/creds.json")),
+				qrCode: whatsappQrCode,
+			});
+
+		} else if (url.pathname === "/api/whatsapp/connect" && req.method === "POST") {
+			if (whatsappConnected) return jsonReply(res, 200, { ok: true, connected: true, phoneNumber: whatsappPhoneNumber });
+			try {
+				await startWhatsApp(agentRoot, opts);
+				jsonReply(res, 200, { ok: true, connecting: true });
+			} catch (err: any) {
+				jsonReply(res, 500, { error: err.message });
+			}
+
+		} else if (url.pathname === "/api/whatsapp/disconnect" && req.method === "POST") {
+			let clearAuth = false;
+			try {
+				const body = await readBody(req);
+				const parsed = JSON.parse(body);
+				clearAuth = !!parsed.clearAuth;
+			} catch { /* no body is fine */ }
+			stopWhatsApp(clearAuth);
+			jsonReply(res, 200, { ok: true });
+
+		} else if (url.pathname === "/api/whatsapp/qr" && req.method === "GET") {
+			jsonReply(res, 200, { qrCode: whatsappQrCode, connected: whatsappConnected });
 
 		// ── Composio OAuth callback ─────────────────────────────────────
 		} else if (url.pathname === "/api/composio/callback") {

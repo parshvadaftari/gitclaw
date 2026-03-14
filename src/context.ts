@@ -8,11 +8,11 @@ function estimateTokens(text: string): number {
 	return Math.ceil(text.length / 4);
 }
 
-/** Truncate text to roughly maxTokens */
+/** Truncate text to roughly maxTokens, keeping the most recent content */
 function truncateToTokens(text: string, maxTokens: number): string {
 	const maxChars = maxTokens * 4;
 	if (text.length <= maxChars) return text;
-	return text.slice(0, maxChars) + "\n[...truncated]";
+	return "[...earlier messages truncated]\n" + text.slice(-maxChars);
 }
 
 /** Read a file if it exists, return empty string otherwise */
@@ -112,7 +112,7 @@ export async function getVoiceContext(agentDir: string, branch: string): Promise
 		parts.push(`[Previous session summary]\n${truncateToTokens(summary, 150)}`);
 	}
 	if (recentChat) {
-		parts.push(`[Recent conversation — this is what just happened, you were part of this]\n${truncateToTokens(recentChat, 400)}`);
+		parts.push(`[Recent conversation — this is what just happened, you were part of this]\n${truncateToTokens(recentChat, 800)}`);
 	}
 
 	if (parts.length === 0) return "";
@@ -138,7 +138,7 @@ export async function getAgentContext(agentDir: string, branch: string): Promise
 		parts.push(`[Session Summary]\n${truncateToTokens(summary, 300)}`);
 	}
 	if (recentChat) {
-		parts.push(`[Recent Conversation]\n${truncateToTokens(recentChat, 400)}`);
+		parts.push(`[Recent Conversation]\n${truncateToTokens(recentChat, 800)}`);
 	}
 
 	if (parts.length === 0) return "";

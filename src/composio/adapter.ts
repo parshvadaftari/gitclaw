@@ -49,7 +49,7 @@ export class ComposioAdapter {
 	}
 
 	// Dynamically fetch only the relevant tools for a user query (semantic search)
-	async getToolsForQuery(query: string, limit = 10): Promise<GCToolDefinition[]> {
+	async getToolsForQuery(query: string, limit = 15): Promise<GCToolDefinition[]> {
 		const connections = await this.client.listConnections(this.userId);
 		if (connections.length === 0) return [];
 

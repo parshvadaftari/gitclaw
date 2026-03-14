@@ -608,6 +608,15 @@
   }
   .comms-card-icon svg { width: 24px; height: 24px; }
   .comms-card-icon.telegram { color: #2AABEE; }
+  .comms-card-icon.whatsapp { color: #25D366; }
+  .conv-msg.whatsapp { border-left: 2px solid #25D366; padding-left: 8px; }
+  .conv-msg.whatsapp .label.wa { color: #25D366; }
+  .comms-status.scanning { background: rgba(210,153,34,0.12); color: #d29922; }
+  .wa-qr-container { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px; }
+  .wa-qr-container canvas { border-radius: 8px; background: #fff; padding: 8px; }
+  .wa-qr-hint { font-size: 10px; color: #8b949e; text-align: center; }
+  .wa-clear-auth { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8b949e; }
+  .wa-clear-auth input { accent-color: #f85149; }
   .comms-card-info { display: flex; flex-direction: column; gap: 3px; flex: 1; }
   .comms-card-name { font-size: 14px; font-weight: 600; color: #e6edf3; }
   .comms-card-desc { font-size: 11px; color: #8b949e; line-height: 1.5; }
@@ -820,15 +829,57 @@
             <input type="password" id="tgToken" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v..." spellcheck="false" autocomplete="off" />
             <span class="comms-hint">Get one from <a href="https://t.me/BotFather" target="_blank">@BotFather</a> on Telegram</span>
           </div>
+          <div class="comms-field">
+            <label>Allowed Users</label>
+            <input type="text" id="tgAllowedUsers" placeholder="@username1, @username2" spellcheck="false" autocomplete="off" />
+            <span class="comms-hint">Comma-separated usernames. Use <code>*</code> to allow everyone. Empty = block all.</span>
+          </div>
+        </div>
+        <div class="comms-card-security" id="tgSecurity" style="display:none;">
+          <div class="comms-field">
+            <label>Allowed Users</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="text" id="tgAllowedUsersLive" placeholder="@username1, @username2" spellcheck="false" autocomplete="off" style="flex:1;" />
+              <button class="tk-btn connect" onclick="saveTgAllowedUsers()" style="padding:6px 14px;font-size:12px;">Save</button>
+            </div>
+            <span class="comms-hint">Comma-separated usernames. Use <code>*</code> to allow everyone. Empty = block all.</span>
+          </div>
         </div>
         <div class="comms-card-actions">
           <button class="tk-btn connect" id="tgConnectBtn" onclick="toggleTelegram()">Connect</button>
+        </div>
+      </div>
+
+      <!-- WhatsApp Card -->
+      <div class="comms-card" id="whatsappCard">
+        <div class="comms-card-top">
+          <div class="comms-card-icon whatsapp">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          </div>
+          <div class="comms-card-info">
+            <span class="comms-card-name">WhatsApp</span>
+            <span class="comms-card-desc">Send messages to yourself on WhatsApp and get agent responses</span>
+          </div>
+          <span class="comms-status" id="waStatus"></span>
+        </div>
+        <div class="comms-card-config" id="waConfig">
+          <div class="wa-qr-container" id="waQrContainer" style="display:none;">
+            <canvas id="waQrCanvas" width="256" height="256"></canvas>
+            <span class="wa-qr-hint">Scan with WhatsApp &rarr; Settings &rarr; Linked Devices</span>
+          </div>
+        </div>
+        <div class="comms-card-actions">
+          <label class="wa-clear-auth" id="waClearLabel" style="display:none;">
+            <input type="checkbox" id="waClearAuth" /> Clear session on disconnect
+          </label>
+          <button class="tk-btn connect" id="waConnectBtn" onclick="toggleWhatsApp()">Connect</button>
         </div>
       </div>
     </div>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <!-- <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script> -->
 <script>
 let currentView='chat',filesLoaded=false,integrationsLoaded=false,commsLoaded=false;
@@ -841,7 +892,7 @@ function switchView(v){
   document.getElementById('tabIntegrations').classList.toggle('active',v==='integrations');
   document.getElementById('tabComms').classList.toggle('active',v==='comms');
   if(v==='integrations'&&!integrationsLoaded){loadToolkits();integrationsLoaded=true;}
-  if(v==='comms'&&!commsLoaded){loadTelegramStatus();commsLoaded=true;}
+  if(v==='comms'&&!commsLoaded){loadTelegramStatus();loadWhatsAppStatus();commsLoaded=true;}
 }
 
 /* FILES/MONACO DISABLED
@@ -893,8 +944,10 @@ function handleServerMessage(m){switch(m.type){
   case'transcript':
     if(m.role==='user'&&!m.partial){
       var isTg=m.text&&m.text.startsWith('[Telegram]');
-      var label=isTg?'<span class="label tg">Telegram: </span>':'<span class="label">You: </span>';
-      appendConv(label+escHtml(isTg?m.text.replace(/^\[Telegram\]\s*/,''):m.text),isTg?'user telegram':'user');
+      var isWa=m.text&&m.text.startsWith('[WhatsApp]');
+      var label=isTg?'<span class="label tg">Telegram: </span>':isWa?'<span class="label wa">WhatsApp: </span>':'<span class="label">You: </span>';
+      var cleanText=isTg?m.text.replace(/^\[Telegram\]\s*/,''):isWa?m.text.replace(/^\[WhatsApp\]:\s*/,''):m.text;
+      appendConv(label+escHtml(cleanText),isTg?'user telegram':isWa?'user whatsapp':'user');
     }
     else if(m.role==='assistant'){if(m.partial)assistantText+=m.text;else{if(assistantText){appendConv('<span class="label">Assistant: </span>'+escHtml(assistantText),'assistant');assistantText='';}else appendConv('<span class="label">Assistant: </span>'+escHtml(m.text),'assistant');}}
     break;
@@ -1272,6 +1325,10 @@ async function loadTelegramStatus(){
   try{
     var r=await fetch('/api/telegram/status');
     var d=await r.json();
+    var allowedUsersInput=document.getElementById('tgAllowedUsers');
+    var securityDiv=document.getElementById('tgSecurity');
+    var liveInput=document.getElementById('tgAllowedUsersLive');
+    var usersStr=(d.allowedUsers||[]).map(function(u){return '@'+u;}).join(', ');
     if(d.connected){
       card.classList.add('is-connected');
       statusEl.className='comms-status connected';
@@ -1286,6 +1343,9 @@ async function loadTelegramStatus(){
         info.innerHTML='<span class="bot-name">'+escHtml(d.botName)+'</span><span class="bot-username">@'+escHtml(d.botUsername||'')+'</span>';
         configDiv.parentNode.insertBefore(info,configDiv);
       }
+      // Show live security editor when connected
+      securityDiv.style.display='';
+      liveInput.value=usersStr;
     }else{
       card.classList.remove('is-connected');
       statusEl.className='comms-status disconnected';
@@ -1295,6 +1355,8 @@ async function loadTelegramStatus(){
       var existing2=card.querySelector('.comms-bot-info');
       if(existing2)existing2.remove();
       if(d.hasToken)tokenInput.placeholder='Token saved (enter new to change)';
+      securityDiv.style.display='none';
+      if(usersStr)allowedUsersInput.value=usersStr;
     }
   }catch(e){
     statusEl.className='comms-status error';
@@ -1318,6 +1380,7 @@ async function toggleTelegram(){
   }
 
   var token=tokenInput.value.trim();
+  var allowedUsers=document.getElementById('tgAllowedUsers').value.trim();
   if(!token&&!tokenInput.placeholder.includes('saved')){
     tokenInput.style.borderColor='#f85149';
     tokenInput.focus();
@@ -1329,7 +1392,7 @@ async function toggleTelegram(){
     var r=await fetch('/api/telegram/connect',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token:token||undefined})
+      body:JSON.stringify({token:token||undefined,allowedUsers:allowedUsers||undefined})
     });
     var d=await r.json();
     if(d.error){
@@ -1345,6 +1408,143 @@ async function toggleTelegram(){
   btn.disabled=false;
   tokenInput.value='';
   loadTelegramStatus();
+}
+
+async function saveTgAllowedUsers(){
+  var input=document.getElementById('tgAllowedUsersLive');
+  var users=input.value.trim();
+  try{
+    var r=await fetch('/api/telegram/allowed-users',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({users:users})
+    });
+    var d=await r.json();
+    if(d.ok){
+      input.style.borderColor='#3fb950';
+      setTimeout(function(){input.style.borderColor='';},1500);
+    }
+  }catch(e){}
+}
+
+// ── WhatsApp ────────────────────────────────────────────────────────
+var waQrPollTimer=null;
+
+function renderQR(canvas,text){
+  var qr=qrcode(0,'L');
+  qr.addData(text);
+  qr.make();
+  var count=qr.getModuleCount();
+  var ctx=canvas.getContext('2d');
+  var size=canvas.width;
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,size,size);
+  var cellSize=Math.floor(size/count);
+  var offset=Math.floor((size-cellSize*count)/2);
+  ctx.fillStyle='#000';
+  for(var r=0;r<count;r++)for(var c=0;c<count;c++){
+    if(qr.isDark(r,c))ctx.fillRect(offset+c*cellSize,offset+r*cellSize,cellSize,cellSize);
+  }
+}
+
+async function loadWhatsAppStatus(){
+  var card=document.getElementById('whatsappCard');
+  var statusEl=document.getElementById('waStatus');
+  var btn=document.getElementById('waConnectBtn');
+  var qrContainer=document.getElementById('waQrContainer');
+  var clearLabel=document.getElementById('waClearLabel');
+  try{
+    var r=await fetch('/api/whatsapp/status');
+    var d=await r.json();
+    if(d.connected){
+      card.classList.add('is-connected');
+      statusEl.className='comms-status connected';
+      statusEl.textContent='Connected';
+      btn.className='tk-btn connected';
+      btn.textContent='Disconnect';
+      clearLabel.style.display='';
+      qrContainer.style.display='none';
+      if(waQrPollTimer){clearInterval(waQrPollTimer);waQrPollTimer=null;}
+      // Show phone number
+      var existing=card.querySelector('.comms-bot-info');
+      if(existing)existing.remove();
+      if(d.phoneNumber){
+        var info=document.createElement('div');
+        info.className='comms-bot-info';
+        info.innerHTML='<span class="bot-name">'+escHtml(d.phoneNumber)+'</span><span class="bot-username">WhatsApp linked</span>';
+        document.getElementById('waConfig').parentNode.insertBefore(info,document.getElementById('waConfig'));
+      }
+    }else if(d.qrCode){
+      card.classList.remove('is-connected');
+      statusEl.className='comms-status scanning';
+      statusEl.textContent='Scanning';
+      btn.className='tk-btn connect';
+      btn.textContent='Cancel';
+      clearLabel.style.display='none';
+      qrContainer.style.display='';
+      renderQR(document.getElementById('waQrCanvas'),d.qrCode);
+      var existing2=card.querySelector('.comms-bot-info');
+      if(existing2)existing2.remove();
+    }else{
+      card.classList.remove('is-connected');
+      statusEl.className='comms-status disconnected';
+      statusEl.textContent='Not connected';
+      btn.className='tk-btn connect';
+      btn.textContent='Connect';
+      clearLabel.style.display='none';
+      qrContainer.style.display='none';
+      var existing3=card.querySelector('.comms-bot-info');
+      if(existing3)existing3.remove();
+    }
+  }catch(e){
+    statusEl.className='comms-status error';
+    statusEl.textContent='Error';
+  }
+}
+
+async function toggleWhatsApp(){
+  var card=document.getElementById('whatsappCard');
+  var btn=document.getElementById('waConnectBtn');
+
+  if(card.classList.contains('is-connected')){
+    // Disconnect
+    btn.disabled=true;btn.textContent='Disconnecting...';
+    var clearAuth=document.getElementById('waClearAuth').checked;
+    try{
+      await fetch('/api/whatsapp/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clearAuth:clearAuth})});
+    }catch(e){}
+    btn.disabled=false;
+    document.getElementById('waClearAuth').checked=false;
+    if(waQrPollTimer){clearInterval(waQrPollTimer);waQrPollTimer=null;}
+    loadWhatsAppStatus();
+    return;
+  }
+
+  // If currently scanning (cancel)
+  if(document.getElementById('waStatus').textContent==='Scanning'){
+    btn.disabled=true;btn.textContent='Canceling...';
+    try{await fetch('/api/whatsapp/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});}catch(e){}
+    btn.disabled=false;
+    if(waQrPollTimer){clearInterval(waQrPollTimer);waQrPollTimer=null;}
+    loadWhatsAppStatus();
+    return;
+  }
+
+  // Connect
+  btn.disabled=true;btn.textContent='Connecting...';
+  try{
+    var r=await fetch('/api/whatsapp/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    var d=await r.json();
+    if(d.error){
+      document.getElementById('waStatus').className='comms-status error';
+      document.getElementById('waStatus').textContent=d.error;
+      btn.disabled=false;btn.textContent='Connect';
+      return;
+    }
+  }catch(e){btn.disabled=false;btn.textContent='Connect';return;}
+  btn.disabled=false;
+  // Poll for QR code / connection
+  waQrPollTimer=setInterval(function(){loadWhatsAppStatus();},2000);
+  setTimeout(function(){loadWhatsAppStatus();},500);
 }
 
 // ── AUDIT MODE & FILE EXPLORER ──────────────────────────────────────
