@@ -52,7 +52,7 @@ text=(
   "${LGRAY}Author   ${RESET}${WHITE}Shreyas Kapale @ Lyzr${RESET}"
   "${LGRAY}License  ${RESET}${WHITE}MIT${RESET}"
   ""
-  "${DIM}${LGRAY}Powered by Lyzr Research Labs${RESET}"
+  "${DIM}${LGRAY}A product of Lyzr Research Labs${RESET}"
 )
 
 clear
