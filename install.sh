@@ -49,7 +49,7 @@ text=(
   "${GRAY}A universal git-native multimodal always learning AI Agent${RESET}"
   "${GRAY}(TinyHuman)${RESET}"
   ""
-  "${LGRAY}Author   ${RESET}${WHITE}Shreyas Kapale @ Lyzr${RESET}"
+  "${LGRAY}Author   ${RESET}${WHITE}Shreyas Kapale @ Lyzr Research Labs${RESET}"
   "${LGRAY}License  ${RESET}${WHITE}MIT${RESET}"
   ""
   "${DIM}${LGRAY}A product of Lyzr Research Labs${RESET}"
