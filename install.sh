@@ -100,18 +100,16 @@ echo -e "  ${GREEN}✓${NC} node $(node -v)  ${GREEN}✓${NC} npm $(npm -v)  ${G
 echo ""
 
 # ── Install gitclaw globally ─────────────────────────────────────
-# Clean up corrupted partial installs that block npm
-NPM_GLOBAL_DIR="$(npm root -g 2>/dev/null)"
-if [ -d "${NPM_GLOBAL_DIR}/gitclaw" ] && [ ! -f "${NPM_GLOBAL_DIR}/gitclaw/package.json" ]; then
-  echo -e "  ${DIM}  Removing corrupted previous install...${NC}"
-  rm -rf "${NPM_GLOBAL_DIR}/gitclaw"
-fi
-
 if command -v gitclaw &>/dev/null; then
   CURRENT_VER=$(gitclaw --version 2>/dev/null || echo "unknown")
   echo -e "  ${GREEN}✓${NC} gitclaw already installed (${CURRENT_VER})"
 else
   echo -e "  ${BOLD}Installing gitclaw...${NC}"
+  # Remove corrupted partial installs that cause ENOTDIR
+  NPM_GLOBAL_DIR="$(npm root -g 2>/dev/null || echo "")"
+  if [ -n "$NPM_GLOBAL_DIR" ] && [ -d "${NPM_GLOBAL_DIR}/gitclaw" ] && [ ! -f "${NPM_GLOBAL_DIR}/gitclaw/package.json" ]; then
+    rm -rf "${NPM_GLOBAL_DIR}/gitclaw"
+  fi
   npm install -g gitclaw@latest 2>&1 | tail -2
   echo -e "  ${GREEN}✓${NC} gitclaw installed"
 fi
