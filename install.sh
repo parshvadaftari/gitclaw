@@ -110,8 +110,6 @@ fi
 if command -v gitclaw &>/dev/null; then
   CURRENT_VER=$(gitclaw --version 2>/dev/null || echo "unknown")
   echo -e "  ${GREEN}✓${NC} gitclaw already installed (${CURRENT_VER})"
-  echo -e "  ${DIM}  Checking for updates...${NC}"
-  npm update -g gitclaw 2>/dev/null || true
 else
   echo -e "  ${BOLD}Installing gitclaw...${NC}"
   npm install -g gitclaw@latest 2>&1 | tail -2
