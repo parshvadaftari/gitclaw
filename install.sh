@@ -21,7 +21,7 @@ if [[ "${COLORTERM:-}" =~ ^(truecolor|24bit)$ ]]; then
   LGRAY=$'\e[38;2;110;110;110m'
 else
   EMPTY=$'\e[40m'
-  OUTLINE=$'\e[40m'
+  OUTLINE=$'\e[41m'
   FILL=$'\e[101m'
   RED=$'\e[91m'
   GRAY=$'\e[37m'
