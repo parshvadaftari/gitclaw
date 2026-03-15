@@ -3,19 +3,30 @@ set -euo pipefail
 
 # ── Colors & Styles ──────────────────────────────────────────────
 RESET=$'\e[0m'
-EMPTY=$'\e[48;2;13;13;13m'
-OUTLINE=$'\e[48;2;18;7;11m'
-FILL=$'\e[48;2;255;79;99m'
 BOLD=$'\e[1m'
-RED=$'\e[38;2;255;79;99m'
 DIM=$'\e[2m'
 WHITE=$'\e[97m'
-GRAY=$'\e[38;2;160;160;160m'
-LGRAY=$'\e[38;2;110;110;110m'
 GREEN=$'\e[32m'
 CYAN=$'\e[36m'
 YELLOW=$'\e[33m'
 NC=$'\e[0m'
+
+# Truecolor support: VS Code, iTerm2, Ghostty, etc. set COLORTERM
+if [[ "${COLORTERM:-}" =~ ^(truecolor|24bit)$ ]]; then
+  EMPTY=$'\e[48;2;13;13;13m'
+  OUTLINE=$'\e[48;2;18;7;11m'
+  FILL=$'\e[48;2;255;79;99m'
+  RED=$'\e[38;2;255;79;99m'
+  GRAY=$'\e[38;2;160;160;160m'
+  LGRAY=$'\e[38;2;110;110;110m'
+else
+  EMPTY=$'\e[48;5;233m'
+  OUTLINE=$'\e[48;5;52m'
+  FILL=$'\e[48;5;204m'
+  RED=$'\e[38;5;204m'
+  GRAY=$'\e[38;5;248m'
+  LGRAY=$'\e[38;5;242m'
+fi
 
 # ── Sprite Banner ────────────────────────────────────────────────
 rows=(
