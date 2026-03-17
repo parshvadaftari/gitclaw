@@ -2418,7 +2418,7 @@ a{color:#58a6ff;}</style></head>
 				const skillsDir = join(agentRoot, "skills");
 				const before = new Set(existsSync(skillsDir) ? readdirSync(skillsDir) : []);
 
-				execSync(`npx -y skills add -y ${cleanSource}`, {
+				execSync(`npx -y skills add -y ${cleanSource} --agent openclaw`, {
 					cwd: agentRoot,
 					encoding: "utf-8",
 					timeout: 120000,
