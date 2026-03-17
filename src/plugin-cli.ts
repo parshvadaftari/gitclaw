@@ -2,6 +2,8 @@ import { readFile, writeFile, mkdir, rm, cp, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { execSync } from "child_process";
 import yaml from "js-yaml";
+// "yaml" (v2) is used here instead of js-yaml because parseDocument()
+// preserves comments and formatting when editing agent.yaml.
 import { parseDocument } from "yaml";
 import { installPlugin, listAllPlugins } from "./plugins.js";
 
@@ -38,8 +40,8 @@ async function ensureGitagentDir(agentDir: string): Promise<string> {
 
 async function handleInstall(agentDir: string, args: string[]): Promise<void> {
 	const source = args[0];
-	if (!source) {
-		console.error(red("Usage: gitclaw plugin install <source> [--name <name>]"));
+	if (!source || source.startsWith("--")) {
+		console.error(red("Usage: gitclaw plugin install <source> [--name <name>] [--force] [--no-enable]"));
 		console.error(dim("  source: git URL or local path"));
 		process.exit(1);
 	}
@@ -49,6 +51,8 @@ async function handleInstall(agentDir: string, args: string[]): Promise<void> {
 	if (nameIdx !== -1 && args[nameIdx + 1]) {
 		name = args[nameIdx + 1];
 	}
+	const force = args.includes("--force");
+	const noEnable = args.includes("--no-enable");
 
 	// Determine if source is a git URL or local path
 	const isGitUrl = source.startsWith("http://") || source.startsWith("https://") || source.startsWith("git@") || source.endsWith(".git");
@@ -58,13 +62,13 @@ async function handleInstall(agentDir: string, args: string[]): Promise<void> {
 		const gitagentDir = await ensureGitagentDir(agentDir);
 		const installDir = join(gitagentDir, "plugins");
 		try {
-			const pluginDir = await installPlugin(source, installDir);
+			const pluginDir = await installPlugin(source, installDir, undefined, force);
 			const pluginName = name || pluginDir.split("/").pop()!;
 			console.log(green(`Installed plugin "${pluginName}" from ${source}`));
 			console.log(dim(`Location: ${pluginDir}`));
 
 			// Add to agent.yaml
-			await addPluginToManifest(agentDir, pluginName, { source, enabled: true });
+			await addPluginToManifest(agentDir, pluginName, { source, enabled: !noEnable });
 			console.log(dim(`Added to agent.yaml`));
 		} catch (err: any) {
 			console.error(red(`Install failed: ${err.message}`));
@@ -80,13 +84,18 @@ async function handleInstall(agentDir: string, args: string[]): Promise<void> {
 
 		const pluginName = name || sourcePath.split("/").pop()!;
 		const targetDir = join(agentDir, "plugins", pluginName);
+
+		if (force && await dirExists(targetDir)) {
+			await rm(targetDir, { recursive: true, force: true });
+		}
+
 		await mkdir(join(agentDir, "plugins"), { recursive: true });
 		await cp(sourcePath, targetDir, { recursive: true });
 
 		console.log(green(`Installed plugin "${pluginName}" from ${sourcePath}`));
 		console.log(dim(`Location: ${targetDir}`));
 
-		await addPluginToManifest(agentDir, pluginName, { enabled: true });
+		await addPluginToManifest(agentDir, pluginName, { enabled: !noEnable });
 		console.log(dim(`Added to agent.yaml`));
 	}
 }

@@ -483,23 +483,36 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
+	// Collect plugin memory layers
+	const pluginMemoryLayers = loaded.plugins.flatMap((p) => p.memoryLayers);
+
 	// Build tools — built-in + declarative
 	let tools: AgentTool<any>[] = createBuiltinTools({
 		dir,
 		timeout: manifest.runtime.timeout,
 		sandbox: sandboxCtx,
 		gitagentDir,
+		pluginMemoryLayers: pluginMemoryLayers.length > 0 ? pluginMemoryLayers : undefined,
 	});
 
 	// Load declarative tools from tools/*.yaml (Phase 2.2)
 	const declarativeTools = await loadDeclarativeTools(agentDir);
 	tools = [...tools, ...declarativeTools];
 
-	// Plugin tools (declarative + programmatic)
+	// Plugin tools (declarative + programmatic) — check for collisions with existing tools
+	const existingToolNames = new Set(tools.map((t) => t.name));
 	for (const plugin of loaded.plugins) {
-		tools = [...tools, ...plugin.tools];
-		if (plugin.programmaticTools.length > 0) {
-			tools = [...tools, ...plugin.programmaticTools.map(toAgentTool)];
+		const pluginTools = [
+			...plugin.tools,
+			...plugin.programmaticTools.map(toAgentTool),
+		];
+		for (const t of pluginTools) {
+			if (existingToolNames.has(t.name)) {
+				console.warn(`[plugin:${plugin.manifest.id}] Tool "${t.name}" collides with existing tool — skipping`);
+			} else {
+				tools.push(t);
+				existingToolNames.add(t.name);
+			}
 		}
 	}
 

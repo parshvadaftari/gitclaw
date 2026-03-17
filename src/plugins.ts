@@ -129,6 +129,7 @@ export async function installPlugin(
 	source: string,
 	targetDir: string,
 	version?: string,
+	force?: boolean,
 ): Promise<string> {
 	await mkdir(targetDir, { recursive: true });
 
@@ -139,10 +140,16 @@ export async function installPlugin(
 	if (await dirExists(pluginDir)) {
 		// Verify it's a valid plugin directory
 		if (await fileExists(join(pluginDir, "plugin.yaml"))) {
-			return pluginDir; // Already installed and valid
+			if (force) {
+				await rm(pluginDir, { recursive: true, force: true });
+			} else {
+				console.log(`Plugin "${name}" already installed. Use --force to reinstall.`);
+				return pluginDir;
+			}
+		} else {
+			// Stale directory: remove and re-clone
+			await rm(pluginDir, { recursive: true, force: true });
 		}
-		// Stale directory: remove and re-clone
-		await rm(pluginDir, { recursive: true, force: true });
 	}
 
 	const args = ["clone", "--depth", "1"];
@@ -229,6 +236,7 @@ async function loadPlugin(
 
 	// Load programmatic entry point
 	let programmaticTools: any[] = [];
+	let memoryLayers: import("./plugin-types.js").MemoryLayerDef[] = [];
 	if (manifest.entry) {
 		try {
 			const { createPluginApi } = await import("./plugin-sdk.js");
@@ -256,6 +264,8 @@ async function loadPlugin(
 			if (extraPrompt) {
 				promptAddition = promptAddition ? `${promptAddition}\n\n${extraPrompt}` : extraPrompt;
 			}
+			// Collect memory layers
+			memoryLayers = api.getMemoryLayers();
 		} catch (err: any) {
 			console.warn(`Plugin "${manifest.id}": failed to load entry "${manifest.entry}": ${err.message}`);
 		}
@@ -270,6 +280,7 @@ async function loadPlugin(
 		hooks,
 		skills,
 		promptAddition,
+		memoryLayers,
 	};
 }
 

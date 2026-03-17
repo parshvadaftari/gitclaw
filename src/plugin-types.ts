@@ -47,6 +47,14 @@ export interface PluginConfig {
 	config?: Record<string, any>;
 }
 
+// ── Memory layer definition ─────────────────────────────────────────────
+
+export interface MemoryLayerDef {
+	name: string;
+	path: string;
+	description: string;
+}
+
 // ── Loaded plugin (resolved and ready to use) ──────────────────────────
 
 export interface LoadedPlugin {
@@ -58,4 +66,5 @@ export interface LoadedPlugin {
 	hooks: HooksConfig | null; // loaded hook definitions
 	skills: SkillMetadata[]; // discovered skills
 	promptAddition: string; // loaded prompt file content
+	memoryLayers: MemoryLayerDef[]; // memory layers from register()
 }

@@ -148,6 +148,9 @@ export function query(options: QueryOptions): Query {
 			await sandboxCtx.gitMachine.start();
 		}
 
+		// Collect plugin memory layers
+		const pluginMemoryLayers = loaded.plugins.flatMap((p) => p.memoryLayers);
+
 		let tools: AgentTool<any>[] = [];
 
 		if (!options.replaceBuiltinTools) {
@@ -156,6 +159,7 @@ export function query(options: QueryOptions): Query {
 				timeout: loaded.manifest.runtime.timeout,
 				sandbox: sandboxCtx,
 				gitagentDir: loaded.gitagentDir,
+				pluginMemoryLayers: pluginMemoryLayers.length > 0 ? pluginMemoryLayers : undefined,
 			});
 		}
 
@@ -163,11 +167,20 @@ export function query(options: QueryOptions): Query {
 		const declarativeTools = await loadDeclarativeTools(loaded.agentDir);
 		tools = [...tools, ...declarativeTools];
 
-		// Plugin tools (declarative + programmatic)
+		// Plugin tools (declarative + programmatic) — check for collisions with existing tools
+		const existingToolNames = new Set(tools.map((t) => t.name));
 		for (const plugin of loaded.plugins) {
-			tools = [...tools, ...plugin.tools];
-			if (plugin.programmaticTools.length > 0) {
-				tools = [...tools, ...plugin.programmaticTools.map(toAgentTool)];
+			const pluginTools = [
+				...plugin.tools,
+				...plugin.programmaticTools.map(toAgentTool),
+			];
+			for (const t of pluginTools) {
+				if (existingToolNames.has(t.name)) {
+					console.warn(`[plugin:${plugin.manifest.id}] Tool "${t.name}" collides with existing tool — skipping`);
+				} else {
+					tools.push(t);
+					existingToolNames.add(t.name);
+				}
 			}
 		}
 

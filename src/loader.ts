@@ -279,7 +279,8 @@ export async function loadAgent(
 		const allowed = new Set(manifest.skills);
 		skills = skills.filter((s) => allowed.has(s.name));
 	}
-	// Merge plugin skills
+	// Plugin skills are merged without filtering — plugins are explicitly
+	// enabled in agent.yaml, so their skills are considered trusted.
 	for (const plugin of plugins) {
 		skills = [...skills, ...plugin.skills];
 	}

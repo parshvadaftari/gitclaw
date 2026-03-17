@@ -1,5 +1,6 @@
 import type { GCToolDefinition } from "./sdk-types.js";
 import type { HookDefinition, HookResult } from "./hooks.js";
+import type { MemoryLayerDef } from "./plugin-types.js";
 
 // ── Plugin API (passed to register() functions) ────────────────────────
 
@@ -23,6 +24,9 @@ export interface GitclawPluginApi {
 	/** Append text to the system prompt */
 	addPrompt(text: string): void;
 
+	/** Register a memory layer the agent can use */
+	registerMemoryLayer(layer: { name: string; path: string; description: string }): void;
+
 	/** Logger for plugin output */
 	logger: {
 		info(msg: string): void;
@@ -37,6 +41,7 @@ interface InternalPluginApi extends GitclawPluginApi {
 	getTools(): GCToolDefinition[];
 	getHooks(): Record<HookEvent, HookDefinition[]> | null;
 	getPrompt(): string;
+	getMemoryLayers(): MemoryLayerDef[];
 }
 
 export function createPluginApi(
@@ -46,6 +51,7 @@ export function createPluginApi(
 ): InternalPluginApi {
 	const tools: GCToolDefinition[] = [];
 	const hooks: Partial<Record<HookEvent, HookHandler[]>> = {};
+	const memoryLayers: MemoryLayerDef[] = [];
 	let promptText = "";
 
 	const prefix = `[plugin:${pluginId}]`;
@@ -66,6 +72,10 @@ export function createPluginApi(
 
 		addPrompt(text: string) {
 			promptText = promptText ? `${promptText}\n\n${text}` : text;
+		},
+
+		registerMemoryLayer(layer: { name: string; path: string; description: string }) {
+			memoryLayers.push(layer);
 		},
 
 		logger: {
@@ -99,6 +109,10 @@ export function createPluginApi(
 
 		getPrompt() {
 			return promptText;
+		},
+
+		getMemoryLayers() {
+			return memoryLayers;
 		},
 	};
 }
